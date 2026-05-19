@@ -57,7 +57,7 @@ interface BingoState {
   finalizeJoinWithCard: (tgId: number) => Promise<number | void>;
   subscribeToRoomEvents: (roomId: string) => void;
   claimBingo: (tgId: number) => Promise<number | void>;
-  daubCell: (cellIndex: number) => Promise<void>; // Updated to Promise for async RPC
+  daubCell: (cellIndex: number) => Promise<void>; 
   leaveGame: () => void;
   clearError: () => void;
   recoverSession: (tgId: number) => Promise<void>; 
@@ -88,12 +88,13 @@ export const useBingoStore = create<BingoState>((set, get) => ({
 
   isRecovering: true, 
 
+  // ✅ THE FIX: Replaced the recursive select that was causing the crash
   fetchRooms: async () => {
     set({ loadingRooms: true });
     try {
       const { data, error } = await supabase
         .from('bingo_rooms')
-        .select(`*, active_game_count:bingo_rooms(count)`)
+        .select('*') 
         .in('status', ['waiting', 'active'])
         .order('created_at', { ascending: false });
 
@@ -246,7 +247,6 @@ export const useBingoStore = create<BingoState>((set, get) => ({
     set({ channel: newChannel, cardsChannel: newCardsChannel });
   },
 
-  // 🚀 THE RLS SECURITY FIX: Routing daubs through the secure RPC tunnel
   daubCell: async (cellIndex: number) => {
     const { mySession, drawnNumbers, currentRoom } = get();
     if (!mySession || !currentRoom) return;
@@ -259,11 +259,9 @@ export const useBingoStore = create<BingoState>((set, get) => ({
 
     const newWinResult = checkWin(mySession.grid, newDaubed, new Set(drawnNumbers));
 
-    // Update the UI instantly so the player feels zero lag
     set({ daubed: newDaubed, winResult: newWinResult });
 
     try {
-      // Securely update the database bypassing RLS lock
       await supabase.rpc('bingo_daub_cell', {
         p_session_id: mySession.id,
         p_daubed: Array.from(newDaubed)
@@ -322,14 +320,10 @@ export const useBingoStore = create<BingoState>((set, get) => ({
         const room = data.room as BingoRoom;
         const card = data.card as GameSession;
 
-        // Rebuild the mental map of the room
         get().generateAllCardsForRoom(room.generation_seed || room.id);
         get().subscribeToRoomEvents(room.id);
 
         if (card.status === 'joining') {
-          // Player dropped before picking a card! Return them to selection.
-          
-          // Fetch taken IDs so they don't pick a taken card
           const { data: takenData } = await supabase
             .from('bingo_cards')
             .select('card_index')
@@ -347,7 +341,6 @@ export const useBingoStore = create<BingoState>((set, get) => ({
           });
 
         } else if (card.status === 'ready') {
-          // Player dropped mid-game! Return them to the board.
           const currentDaubed = new Set(card.daubed || [12]);
           const drawnList = room.drawn_numbers || [];
           const winResult = checkWin(card.grid, currentDaubed, new Set(drawnList));
@@ -364,12 +357,10 @@ export const useBingoStore = create<BingoState>((set, get) => ({
           });
         }
       } else {
-        // Free agent. Let them enter the lobby normally.
         set({ isRecovering: false, screen: 'lobby' });
       }
     } catch (e: any) {
       console.error("Failed to recover session:", e.message || JSON.stringify(e));
-      // Failsafe: If the database glitches, just drop them in the lobby so the app doesn't freeze
       set({ isRecovering: false, screen: 'lobby' });
     }
   },
