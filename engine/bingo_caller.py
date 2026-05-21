@@ -28,16 +28,16 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ── Config ────────────────────────────────────────────────────
-MIN_PLAYERS           = 2   # 🚀 FIX: Must have at least 2 players to play Bingo!
-JOIN_WINDOW_SECONDS   = 30  # ⏳ Time allowed for others to join once unblocked
-COUNTDOWN_SECONDS     = 5   # 🚀 Doors locked visual
-DRAW_INTERVAL         = 3   # 🎱 Draw a number every 3 seconds
+MIN_PLAYERS           = 2   # Must have at least 2 players to play Bingo
+JOIN_WINDOW_SECONDS   = 30  # Time allowed for others to join once unblocked
+COUNTDOWN_SECONDS     = 5   # Doors locked visual
+DRAW_INTERVAL         = 3   # Draw a number every 3 seconds
 TICK_INTERVAL         = 1   
 MAX_CONCURRENT_GAMES  = 3
 OVERFLOW_PLAYER_LIMIT = 100
 
 _last_draw_time: dict[str, float] = {}
-_room_unblocked_at: dict[str, float] = {} # 🚀 FIX: Tracks when a room hits the front of the queue
+_room_unblocked_at: dict[str, float] = {} # Tracks when a room hits the front of the queue
 
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -46,23 +46,20 @@ def log(msg: str) -> None:
     ts = datetime.now().strftime("%H:%M:%S")
     print(f"[ENGINE {ts}] {msg}")
 
-def generate_draw_sequence() -> list[int]:
-    seq = list(range(1, 76))
-    random.shuffle(seq)
-    return seq
-
 def get_running_games_count(entry_fee: float) -> int:
     try:
         res = sb.table("bingo_rooms").select("id", count="exact").in_("status", ["countdown", "active"]).eq("entry_fee", entry_fee).execute()
         return res.count or 0
-    except Exception:
+    except Exception as e:
+        log(f"⚠️ Error counting running games: {e}")
         return 0
 
 def get_player_count(room_id: str) -> int:
     try:
         res = sb.table("bingo_cards").select("id", count="exact").eq("room_id", room_id).execute()
         return res.count or 0
-    except Exception:
+    except Exception as e:
+        log(f"⚠️ Error counting players for {room_id[:8]}: {e}")
         return 0
 
 def get_first_player_join_time(room_id: str):
@@ -72,7 +69,6 @@ def get_first_player_join_time(room_id: str):
         
         if res.data and len(res.data) > 0:
             row = res.data[0]
-            # 🚀 FIX: Properly detect the 'joined_at' column to stop the Failsafe Panic
             raw_time = row.get("joined_at") or row.get("created_at") or row.get("inserted_at")
             
             if raw_time:
@@ -114,6 +110,7 @@ def process_waiting_rooms():
         result = sb.table("bingo_rooms").select("*").eq("status", "waiting").execute()
         rooms = result.data or []
     except Exception as e:
+        log(f"⚠️ Error fetching waiting rooms: {e}")
         return
 
     for room in rooms:
@@ -136,18 +133,16 @@ def process_waiting_rooms():
             reason = "Lobby Overflow (100+ Players)"
             
         # RULE 2: THE QUEUE MANAGER
-        elif running_count > 0:
+        elif running_count >= MAX_CONCURRENT_GAMES:
             if player_count > 0:
-                log(f"🛑 QUEUED: Room {room_id[:8]} is waiting for current game to finish...")
-                # 🚀 FIX: Continuously record the current time so the 30s window doesn't expire while waiting!
+                log(f"🛑 QUEUED: Room {room_id[:8]} is waiting for current games to finish...")
                 _room_unblocked_at[room_id] = time.time()
                 
-        # RULE 3: THE COUNTDOWN WINDOW (Only happens if running_count == 0)
-        elif running_count == 0:
+        # RULE 3: THE COUNTDOWN WINDOW
+        elif running_count < MAX_CONCURRENT_GAMES:
             if player_count >= MIN_PLAYERS:
                 first_join = get_first_player_join_time(room_id)
                 if first_join:
-                    # 🚀 FIX: The timer starts either when Player 1 joined, OR when the room left the queue (whichever is more recent!)
                     unblocked_ts = _room_unblocked_at.get(room_id, 0.0)
                     start_measuring_from = max(first_join.timestamp(), unblocked_ts)
                     elapsed = time.time() - start_measuring_from
@@ -160,23 +155,19 @@ def process_waiting_rooms():
                         if remaining % 2 == 0 and remaining > 0:
                             log(f"⏳ Room {room_id[:8]} gathering players ({remaining}s left in window)...")
                 else:
-                    # If we have 2+ players but timestamps broke, start it safely.
                     log(f"⚠️ Timestamp missing but 2+ players present. Starting Room {room_id[:8]}.")
                     should_start = True
                     reason = "Force Start (Failsafe for 2+ Players)"
 
         if should_start:
-            draw_seq = generate_draw_sequence()
             try:
                 sb.table("bingo_rooms").update({
                     "status": "countdown",
                     "countdown_started_at": now_utc().isoformat(),
-                    "draw_sequence": draw_seq,
-                    "drawn_numbers": [],
                 }).eq("id", room_id).execute()
                 
                 log(f"🟡 Room {room_id[:8]} → DOORS LOCKED. Reason: {reason}")
-                _room_unblocked_at.pop(room_id, None) # Clean up memory
+                _room_unblocked_at.pop(room_id, None)
 
                 new_room = {
                     "status": "waiting",
@@ -187,33 +178,34 @@ def process_waiting_rooms():
                 log(f"🌱 Spawned new {entry_fee} ETB Lobby.")
 
             except Exception as e:
-                log(f"[ERROR] Transitioning room: {e}")
+                log(f"[ERROR] Transitioning room to countdown: {e}")
 
 # ══════════════════════════════════════════════════════════════
-# PHASE 2: COUNTDOWN → ACTIVE (The SQL Override)
+# PHASE 2: COUNTDOWN → ACTIVE (The Final Override)
 # ══════════════════════════════════════════════════════════════
 def process_countdown_rooms():
     try:
         result = sb.table("bingo_rooms").select("*").eq("status", "countdown").execute()
         rooms = result.data or []
-    except Exception: return
+    except Exception as e: 
+        log(f"⚠️ Error fetching countdown rooms: {e}")
+        return
 
     for room in rooms:
         room_id = room["id"]
         entry_fee = room.get("entry_fee", 10)
         
-        # 🚀 FIX: Prevent the SQL Database from bypassing our Queue!
-        # Check if there is an 'active' game running right now
         try:
             active_res = sb.table("bingo_rooms").select("id", count="exact").eq("status", "active").eq("entry_fee", entry_fee).execute()
             active_count = active_res.count or 0
-        except:
+        except Exception as e:
+            log(f"⚠️ Error checking active count for {room_id[:8]}: {e}")
             active_count = 0
             
-        if active_count > 0:
-            # The SQL DB tried to start this room early. Slap it back into the waiting queue!
+        # FIX: Ensure we don't bypass our 3 concurrent game limit!
+        if active_count >= MAX_CONCURRENT_GAMES:
             sb.table("bingo_rooms").update({"status": "waiting"}).eq("id", room_id).execute()
-            log(f"⏪ Room {room_id[:8]} triggered early by DB. Slapping back to WAITING queue.")
+            log(f"⏪ Room {room_id[:8]} slapped back to WAITING (Game Limit Reached).")
             continue
 
         cd_started = room.get("countdown_started_at")
@@ -226,14 +218,20 @@ def process_countdown_rooms():
 
         if (now_utc() - started).total_seconds() >= COUNTDOWN_SECONDS:
             try:
+                # FIX: Shuffle the hat of 75 numbers right before the game begins!
+                shuffled_hat = random.sample(range(1, 76), 75)
+                
                 sb.table("bingo_rooms").update({
                     "status": "active",
                     "started_at": now_utc().isoformat(),
+                    "draw_sequence": shuffled_hat,
+                    "drawn_numbers": []
                 }).eq("id", room_id).execute()
 
                 _last_draw_time[room_id] = time.time()
-                log(f"🟢 Room {room_id[:8]} → ACTIVE (Game Started!)")
-            except Exception: pass
+                log(f"🟢 Room {room_id[:8]} → ACTIVE (Game Started with Shuffled Deck!)")
+            except Exception as e: 
+                log(f"❌ ERROR activating game {room_id[:8]}: {e}")
 
 # ══════════════════════════════════════════════════════════════
 # PHASE 3: ACTIVE → FINISHED
@@ -242,7 +240,9 @@ def process_active_rooms():
     try:
         result = sb.table("bingo_rooms").select("id, draw_sequence, drawn_numbers").eq("status", "active").execute()
         rooms = result.data or []
-    except Exception: return
+    except Exception as e: 
+        log(f"⚠️ Error fetching active rooms: {e}")
+        return
 
     for room in rooms:
         room_id = room["id"]
@@ -260,7 +260,8 @@ def process_active_rooms():
                 }).eq("id", room_id).execute()
                 log(f"🔴 Room {room_id[:8]} → FINISHED")
                 _last_draw_time.pop(room_id, None)
-            except Exception: pass
+            except Exception as e: 
+                log(f"❌ ERROR finishing room {room_id[:8]}: {e}")
             continue
 
         last_draw = _last_draw_time.get(room_id, 0)
@@ -277,7 +278,8 @@ def process_active_rooms():
             _last_draw_time[room_id] = time.time()
             col = "BINGO"[min((next_number - 1) // 15, 4)]
             log(f"🎱 Room {room_id[:8]} drew {col}-{next_number} ({next_index + 1}/75)")
-        except Exception: pass
+        except Exception as e: 
+            log(f"❌ ERROR drawing number for {room_id[:8]}: {e}")
 
 # ══════════════════════════════════════════════════════════════
 # BOOTSTRAP LOBBY
@@ -287,11 +289,12 @@ def ensure_initial_rooms():
         res = sb.table("bingo_rooms").select("id").eq("status", "waiting").execute()
         if not res.data:
             sb.table("bingo_rooms").insert({"status": "waiting", "entry_fee": 10}).execute()
-    except Exception: pass
+    except Exception as e: 
+        log(f"⚠️ Error bootstrapping initial rooms: {e}")
 
 def main():
     log("=" * 50)
-    log("🎰 CHELA Bingo Engine Online (Bulletproof Batching)")
+    log("🎰 CHELA Bingo Engine Online (Bulletproof Edition)")
     log("=" * 50)
     
     cleanup_zombie_rooms()
