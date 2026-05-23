@@ -59,8 +59,8 @@ def get_player_count(room_id: str) -> int:
 def get_second_player_join_time(room_id: str):
     """Finds the absolute database timestamp of when Player 2 bought their card."""
     try:
-        # Order by id to ensure we get the cards in the exact order they were purchased
-        res = sb.table("bingo_cards").select("*").eq("room_id", room_id).order("id").limit(2).execute()
+        # THE FIX: Order by 'created_at' to perfectly sort timestamps instead of random UUIDs
+        res = sb.table("bingo_cards").select("*").eq("room_id", room_id).order("created_at").limit(2).execute()
         
         if res.data and len(res.data) >= 2:
             row = res.data[1]  # Index 1 is the 2nd player
