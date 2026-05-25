@@ -9,6 +9,7 @@ interface Props {
 
 const SummaryBar = ({ label, value, colorClass }: { label: string; value: string; colorClass: string }) => (
   <div className="bg-[#0a4a2e]/80 border border-white/10 rounded-xl flex-1 p-1.5 text-center">
+    {/* 🚀 FIX: Added the missing backticks around the className string! */}
     <div className={`${colorClass} font-black text-[11px]`}>{value}</div>
     <div className="text-[8px] text-white/40 uppercase tracking-wide">{label}</div>
   </div>

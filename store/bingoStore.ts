@@ -88,7 +88,6 @@ export const useBingoStore = create<BingoState>((set, get) => ({
 
   isRecovering: true, 
 
-  // ✅ THE FIX: Replaced the recursive select that was causing the crash
   fetchRooms: async () => {
     set({ loadingRooms: true });
     try {
@@ -226,18 +225,12 @@ export const useBingoStore = create<BingoState>((set, get) => ({
       )
       .subscribe();
 
+    // 🚀 THE FIX: Wildcard listener that aggressively adds any new card index to the Set
     const newCardsChannel = supabase
       .channel(`bingo-cards-${roomId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bingo_cards', filter: `room_id=eq.${roomId}`}, 
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bingo_cards', filter: `room_id=eq.${roomId}`}, 
         (payload: any) => {
-          if (payload.new.card_index) {
-            set((state) => ({ takenCardIds: new Set(state.takenCardIds).add(payload.new.card_index) }));
-          }
-        }
-      )
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'bingo_cards', filter: `room_id=eq.${roomId}`}, 
-        (payload: any) => {
-          if (payload.new.card_index && payload.old.card_index === null) {
+          if (payload.new && payload.new.card_index) {
             set((state) => ({ takenCardIds: new Set(state.takenCardIds).add(payload.new.card_index) }));
           }
         }

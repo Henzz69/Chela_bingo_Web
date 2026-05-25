@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useBingoStore } from '@/store/bingoStore';
 import { columnLetter } from '@/lib/bingoCards';
@@ -21,11 +22,28 @@ export default function BingoGameBoard({ tgId }: Props) {
     winnerId,
     payout,
     error,
+    takenCardIds, // 🚀 NEW: We pull this to count the players!
     daubCell,
     claimBingo,
     leaveGame,
     clearError,
   } = useBingoStore();
+
+  // 🚀 NEW: Local 30-second countdown state for the UI
+  const [countdownStart, setCountdownStart] = useState<number>(30);
+
+  useEffect(() => {
+    // If we are waiting, and we have 2 or more players, start ticking!
+    if (gameStatus === 'waiting' && takenCardIds.size >= 2) {
+      const interval = setInterval(() => {
+        setCountdownStart((prev) => (prev > 0 ? prev - 1 : 0));
+      }, 1000);
+      return () => clearInterval(interval);
+    } else {
+      // Reset if someone leaves or if the game starts
+      setCountdownStart(30);
+    }
+  }, [gameStatus, takenCardIds.size]);
 
   const lastDrawn = drawnNumbers.length > 0 ? drawnNumbers[drawnNumbers.length - 1] : null;
 
@@ -46,6 +64,7 @@ export default function BingoGameBoard({ tgId }: Props) {
 
   const isWinner = winnerId === String(tgId);           
   const isLoser = gameStatus === 'finished' && winnerId && winnerId !== String(tgId);
+  const playerCount = takenCardIds.size;
 
   return (
     <div className="w-full flex flex-col text-white">
@@ -207,7 +226,6 @@ export default function BingoGameBoard({ tgId }: Props) {
           </div>
 
           <div className="grid grid-cols-5 gap-2">
-            {/* 🚀 FIX: Explicitly typed num and idx here! */}
             {card.map((num: number, idx: number) => {
               const isDaubed = daubed?.has(idx) ?? false;
               const isFree = idx === 12;
@@ -252,7 +270,8 @@ export default function BingoGameBoard({ tgId }: Props) {
           </div>
 
           <AnimatePresence>
-            {gameStatus === 'waiting' && (
+            {/* 🚀 THE FIX: Dynamic UI based on Player Count! */}
+            {gameStatus === 'waiting' && playerCount < 2 && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -261,6 +280,20 @@ export default function BingoGameBoard({ tgId }: Props) {
               >
                 <div className="text-2xl mb-2">⏳</div>
                 <div className="font-bold">Waiting for opponent to join...</div>
+                <div className="text-sm opacity-70 mt-1">Share the lobby with your friends!</div>
+              </motion.div>
+            )}
+
+            {gameStatus === 'waiting' && playerCount >= 2 && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0 }}
+                className="mt-6 bg-green-500/10 border border-green-500/20 rounded-xl p-4 text-center text-green-400"
+              >
+                <div className="text-2xl mb-2">🔥</div>
+                <div className="font-bold text-lg">Opponent found!</div>
+                <div className="text-sm mt-1">Game starts in: <span className="font-black text-xl">{countdownStart}s</span></div>
               </motion.div>
             )}
             
