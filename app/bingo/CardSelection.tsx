@@ -1,4 +1,4 @@
-[5/24/2026 4:07 PM] Henok: 'use client';
+'use client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useBingoStore } from '@/store/bingoStore';
 import { columnLetter } from '@/lib/bingoCards';
@@ -68,7 +68,7 @@ export default function BingoCardSelection({ tgId }: Props) {
               const cardId = i + 1;
               const isTaken = takenCardIds.has(cardId);
               const isSelected = selectedCardId === cardId;
-[5/24/2026 4:07 PM] Henok: return (
+             return (
                 <motion.button
                   key={cardId}
                   whileTap={!isTaken ? { scale: 0.85 } : {}}
