@@ -32,7 +32,7 @@ export default function BingoCardSelection({ tgId }: Props) {
   const currentPreviewGrid = selectedCardId ? allCardGrids[selectedCardId] : null;
 
   return (
-    // 🚀 FIX: Locked height to 100dvh, flex-col, overflow-hidden prevents scrolling
+    // 🚀 FIX: Locked height to 100dvh, flex-col, overflow-hidden perfectly prevents scrolling
     <div className="w-full h-[100dvh] overflow-hidden bg-[#042014] text-white flex flex-col pt-safe">
       
       {/* ── Header Summary (Fixed Height) ── */}
@@ -50,7 +50,7 @@ export default function BingoCardSelection({ tgId }: Props) {
         </div>
       </nav>
 
-      {/* ── Main Layout (Flexible) ── */}
+      {/* ── Main Layout (Flexible container) ── */}
       <main className="flex-1 min-h-0 p-2 flex flex-col gap-2 w-full max-w-md mx-auto">
         <AnimatePresence>
           {error && (
@@ -80,7 +80,7 @@ export default function BingoCardSelection({ tgId }: Props) {
                     ${isSelected
                       ? 'bg-green-500 text-white shadow-[0_0_12px_rgba(34,197,94,0.8)] scale-110 z-20'
                       : isTaken
-                        // 🚀 FIX: Highlighted pulsing style for players waiting in the lobby!
+                        // 🚀 FIX: Highlighted pulsing orange style for players waiting in the lobby!
                         ? 'bg-orange-500/20 border border-orange-500/50 text-orange-400 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.4)] z-10 cursor-not-allowed'
                         : 'bg-[#063320] text-green-300 hover:bg-green-500/30'
                     }
@@ -102,7 +102,7 @@ export default function BingoCardSelection({ tgId }: Props) {
                 initial={{ opacity: 0, scale: 0.9 }} 
                 animate={{ opacity: 1, scale: 1 }} 
                 exit={{ opacity: 0, scale: 0.9 }} 
-                // 🚀 FIX: h-full and max-h constraint ensures it scales to fit the empty space precisely
+                // 🚀 FIX: max-h-full constraint ensures it scales to fit the empty space precisely without overflowing
                 className="w-full max-w-[240px] max-h-full aspect-square flex flex-col bg-white rounded-xl p-2 shadow-2xl relative"
               >
                 <div className="absolute -top-5 left-0 w-full text-center font-bold text-white/50 text-[10px] uppercase tracking-widest">
