@@ -1,13 +1,13 @@
 'use client';
+
 import { motion, AnimatePresence } from 'framer-motion';
 import { useBingoStore } from '@/store/bingoStore';
-import { columnLetter } from '@/lib/bingoCards';
 
 interface Props {
   tgId: number;
 }
 
-const SummaryBar = ({ label, value, colorClass }: { label: string, value: string, colorClass: string }) => (
+const SummaryBar = ({ label, value, colorClass }: { label: string; value: string; colorClass: string }) => (
   <div className="bg-[#0a4a2e]/80 border border-white/10 rounded-xl flex-1 p-1.5 text-center">
     <div className={`${colorClass} font-black text-[11px]`}>{value}</div>
     <div className="text-[8px] text-white/40 uppercase tracking-wide">{label}</div>
@@ -32,10 +32,8 @@ export default function BingoCardSelection({ tgId }: Props) {
   const currentPreviewGrid = selectedCardId ? allCardGrids[selectedCardId] : null;
 
   return (
-    // 🚀 Locked height to 100dvh, flex-col, overflow-hidden perfectly prevents scrolling
     <div className="w-full h-[100dvh] overflow-hidden bg-[#042014] text-white flex flex-col pt-safe">
       
-      {/* ── Header Summary (Fixed Height) ── */}
       <nav className="shrink-0 bg-[#0a4a2e] border-b border-white/10 px-4 py-2 flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <button onClick={() => useBingoStore.setState({ screen: 'select' })} className="text-white/60 hover:text-white transition text-xs flex gap-1 items-center">
@@ -50,7 +48,6 @@ export default function BingoCardSelection({ tgId }: Props) {
         </div>
       </nav>
 
-      {/* ── Main Layout (Flexible container) ── */}
       <main className="flex-1 min-h-0 p-2 flex flex-col gap-2 w-full max-w-md mx-auto">
         <AnimatePresence>
           {error && (
@@ -61,7 +58,6 @@ export default function BingoCardSelection({ tgId }: Props) {
           )}
         </AnimatePresence>
 
-        {/* ── 100 Card Grid (Fixed Aspect Square) ── */}
         <div className="shrink-0 bg-[#0a4a2e] border border-white/10 rounded-xl p-2">
           <div className="grid grid-cols-10 gap-[3px] aspect-square w-full">
             {[...Array(100)].map((_, i) => {
@@ -80,7 +76,6 @@ export default function BingoCardSelection({ tgId }: Props) {
                     ${isSelected
                       ? 'bg-green-500 text-white shadow-[0_0_12px_rgba(34,197,94,0.8)] scale-110 z-20'
                       : isTaken
-                        // 🚀 Highlighted pulsing orange style for players waiting in the lobby
                         ? 'bg-orange-500/20 border border-orange-500/50 text-orange-400 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.4)] z-10 cursor-not-allowed'
                         : 'bg-[#063320] text-green-300 hover:bg-green-500/30'
                     }
@@ -93,7 +88,6 @@ export default function BingoCardSelection({ tgId }: Props) {
           </div>
         </div>
 
-        {/* ── Selected Card Preview (Mathematically Flexible) ── */}
         <div className="flex-1 min-h-0 flex flex-col justify-center items-center py-2 relative w-full">
           <AnimatePresence mode="wait">
             {selectedCardId && currentPreviewGrid ? (
@@ -102,7 +96,6 @@ export default function BingoCardSelection({ tgId }: Props) {
                 initial={{ opacity: 0, scale: 0.9 }} 
                 animate={{ opacity: 1, scale: 1 }} 
                 exit={{ opacity: 0, scale: 0.9 }} 
-                // 🚀 max-h-full constraint ensures it scales to fit the empty space precisely without overflowing
                 className="w-full max-w-[240px] max-h-full aspect-square flex flex-col bg-white rounded-xl p-2 shadow-2xl relative"
               >
                 <div className="absolute -top-5 left-0 w-full text-center font-bold text-white/50 text-[10px] uppercase tracking-widest">
@@ -137,7 +130,6 @@ export default function BingoCardSelection({ tgId }: Props) {
           </AnimatePresence>
         </div>
 
-        {/* ── Start Button (Fixed Height at Bottom) ── */}
         <div className="shrink-0 pb-safe pb-2">
           <motion.button
             whileTap={{ scale: 0.97 }}
