@@ -6,9 +6,7 @@ import { useBingoStore } from '@/store/bingoStore';
 import { columnLetter } from '@/lib/bingoCards';
 
 const COLUMNS = ['B', 'I', 'N', 'G', 'O'];
-
-// 🚀 CONFIGURE YOUR BUSINESS LOGIC HERE
-const HOUSE_EDGE = 0.20; // 20% house cut from the total pot
+const HOUSE_EDGE = 0.20; 
 
 interface Props {
   tgId: number;
@@ -33,10 +31,11 @@ export default function BingoGameBoard({ tgId }: Props) {
   } = useBingoStore();
 
   const [countdownStart, setCountdownStart] = useState<number>(30);
-  const playerCount = takenCardIds.size;
   
-  // 🚀 FIX 1: The timer trigger is now a flat boolean. 
-  // It won't restart when players 3, 4, or 50 join!
+  // 🚀 FIX: Added a locking state to prevent double-firing on laggy networks
+  const [isClaiming, setIsClaiming] = useState(false);
+  
+  const playerCount = takenCardIds.size;
   const isReadyToStart = playerCount >= 2;
 
   useEffect(() => {
@@ -52,7 +51,12 @@ export default function BingoGameBoard({ tgId }: Props) {
 
   const lastDrawn = drawnNumbers.length > 0 ? drawnNumbers[drawnNumbers.length - 1] : null;
 
-  const handleClaimWin = async () => {
+  // 🚀 FIX: Upgraded handler for zero-latency mobile touches
+  const handleClaimWin = async (e?: React.SyntheticEvent) => {
+    if (e) e.preventDefault(); // Stop iOS ghost clicks
+    if (isClaiming) return;
+    
+    setIsClaiming(true);
     try {
       const newBalance = await claimBingo(tgId);
       if (typeof newBalance === 'number') {
@@ -60,6 +64,7 @@ export default function BingoGameBoard({ tgId }: Props) {
       }
     } catch (err) {
       console.error("Failed to claim:", err);
+      setIsClaiming(false); // Only unlock if it failed
     }
   };
 
@@ -68,14 +73,12 @@ export default function BingoGameBoard({ tgId }: Props) {
   const card: number[] = mySession.grid ?? [];
   const isWinner = winnerId === String(tgId);          
 
-  // 🚀 FIX 2: Dynamic Derash calculation
   const totalStaked = currentRoom.entry_fee * playerCount;
   const currentPot = totalStaked * (1 - HOUSE_EDGE);
 
   return (
-    <div className="w-full h-[100dvh] overflow-hidden bg-[#042014] text-white flex flex-col pt-safe">
+    <div className="w-full h-[100dvh] overflow-hidden bg-[#042014] text-white flex flex-col pt-safe select-none">
       
-      {/* ── UPGRADED TOP NAV (Stake & Derash Dashboard) ── */}
       <nav className="shrink-0 bg-[#0a4a2e] border-b border-white/10 px-3 py-2 flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -98,26 +101,23 @@ export default function BingoGameBoard({ tgId }: Props) {
             <div className="text-[8px] text-white/40 uppercase tracking-widest">Stake</div>
           </div>
           <div className="bg-gradient-to-b from-[#0d5c3a] to-[#0a4a2e] border border-green-500/30 rounded-lg flex-1 py-1 text-center shadow-[0_0_10px_rgba(34,197,94,0.1)]">
-            {/* The Pot will now dynamically tick UP as more players join! */}
             <div className="text-yellow-400 font-black text-[11px]">{currentPot > 0 ? currentPot.toFixed(2) : '0.00'} ETB</div>
             <div className="text-[8px] text-green-100/60 uppercase tracking-widest">Derash (Pot)</div>
           </div>
         </div>
       </nav>
 
-      {/* ── MAIN LAYOUT (Flexible Container) ── */}
       <main className="flex-1 min-h-0 p-2 flex flex-col gap-2 w-full max-w-md mx-auto">
         
         <AnimatePresence>
           {error && (
-            <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="shrink-0 fixed top-24 left-4 right-4 z-50 bg-red-500/90 border border-red-500 text-white px-4 py-3 rounded-xl flex gap-3 items-center shadow-2xl backdrop-blur-sm">
+            <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="shrink-0 fixed top-24 left-4 right-4 z-50 bg-red-500/90 border border-red-500 text-white px-4 py-3 rounded-xl flex gap-3 items-center shadow-2xl">
               <span className="font-bold text-sm flex-1">{error}</span>
               <button onClick={clearError} className="text-white/60 hover:text-white text-xl leading-none">×</button>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* ── HUD Dashboard ── */}
         <div className="shrink-0 flex gap-2 h-24">
           <div className="flex-1 bg-[#0a4a2e] border border-white/10 rounded-xl p-3 flex flex-col justify-center items-center text-center relative overflow-hidden">
             <AnimatePresence mode="wait">
@@ -166,13 +166,18 @@ export default function BingoGameBoard({ tgId }: Props) {
           </div>
         </div>
 
-        {/* ── 5x5 BINGO GRID ── */}
         <div className="shrink-0 w-full bg-[#0a4a2e] border border-white/10 rounded-xl p-2 relative">
           <AnimatePresence>
             {winResult?.won && gameStatus === 'active' && (
-              <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-sm rounded-xl">
-                <button onClick={handleClaimWin} className="px-8 py-4 bg-gradient-to-b from-green-400 to-green-600 text-white font-black text-xl rounded-2xl shadow-[0_0_40px_rgba(34,197,94,0.8)] hover:scale-105 transition-transform animate-pulse border-2 border-white/50">
-                  CLAIM BINGO!
+              // 🚀 FIX: Removed backdrop-blur-sm, replaced with solid bg-black/90 to save iOS GPU
+              <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="absolute inset-0 z-30 flex items-center justify-center bg-black/90 rounded-xl">
+                <button 
+                  onPointerDown={handleClaimWin} // 🚀 FIX: Zero-latency touch trigger
+                  onClick={handleClaimWin}       // Desktop fallback
+                  disabled={isClaiming}
+                  className="px-8 py-4 bg-gradient-to-b from-green-400 to-green-600 text-white font-black text-xl rounded-2xl shadow-[0_0_40px_rgba(34,197,94,0.8)] transition-transform touch-manipulation disabled:opacity-50 border-2 border-white/50 active:scale-95"
+                >
+                  {isClaiming ? 'CLAIMING...' : 'CLAIM BINGO!'}
                 </button>
               </motion.div>
             )}
@@ -198,8 +203,9 @@ export default function BingoGameBoard({ tgId }: Props) {
                   onClick={() => daubCell(idx)}
                   disabled={!isClickable && !isFree}
                   whileTap={isClickable ? { scale: 0.85 } : {}}
+                  // 🚀 FIX: touch-manipulation stops iOS from delaying the tap
                   className={`
-                    w-full h-full rounded-lg flex flex-col items-center justify-center font-black text-lg sm:text-xl
+                    touch-manipulation w-full h-full rounded-lg flex flex-col items-center justify-center font-black text-lg sm:text-xl
                     transition-all duration-300 select-none relative overflow-hidden
                     ${isFree
                       ? 'bg-gradient-to-br from-green-500 to-green-600 text-white shadow-inner'
@@ -227,7 +233,6 @@ export default function BingoGameBoard({ tgId }: Props) {
           </div>
         </div>
 
-        {/* ── DRAW HISTORY ── */}
         <div className="flex-1 min-h-0 bg-[#0a4a2e] border border-white/10 rounded-xl flex flex-col p-2">
           <div className="flex justify-between items-center mb-1 shrink-0 px-1">
             <span className="text-[9px] text-white/40 uppercase tracking-widest">Draw Tape</span>
@@ -255,10 +260,9 @@ export default function BingoGameBoard({ tgId }: Props) {
         </div>
       </main>
 
-      {/* ── ENDGAME MODAL ── */}
       <AnimatePresence>
         {gameStatus === 'finished' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
             <motion.div initial={{ scale: 0.8, y: 50, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} transition={{ type: 'spring', damping: 15 }} className={`w-full max-w-sm text-center p-8 rounded-3xl border-2 ${isWinner ? 'bg-[#0a4a2e] border-yellow-400 shadow-[0_0_60px_rgba(250,204,21,0.3)]' : 'bg-[#1a1a1a] border-white/10'}`}>
               {isWinner ? (
                 <>
@@ -277,7 +281,7 @@ export default function BingoGameBoard({ tgId }: Props) {
                   <p className="text-white/40 mb-8 text-sm px-4">An opponent called BINGO first. Better luck next time.</p>
                 </>
               )}
-              <button onClick={leaveGame} className="w-full py-4 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl transition-colors border border-white/10">
+              <button onClick={leaveGame} className="w-full py-4 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl transition-colors border border-white/10 touch-manipulation">
                 Return to Lobby
               </button>
             </motion.div>
