@@ -1,8 +1,8 @@
 """
-Bingo Caller — Multiplayer Batching Engine (Stateless Edition)
+Bingo Caller — Multiplayer Batching Engine (High-Performance Clock Edition)
 ==============================================================
 - MIN_PLAYERS: 2
-- COUNTDOWN_SECONDS: 30 (Strictly measured from when Player 2 joins)
+- COUNTDOWN_SECONDS: 30 (Strictly measured internally by the engine)
 - DOOR_LOCK_SECONDS: 5 (Brief pause before numbers draw)
 """
 
@@ -29,13 +29,15 @@ sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ── Config ────────────────────────────────────────────────────
 MIN_PLAYERS           = 2   
-COUNTDOWN_SECONDS     = 30  # 30 seconds to gather more players once Player 2 joins
-DOOR_LOCK_SECONDS     = 5   # Quick buffer before drawing
+COUNTDOWN_SECONDS     = 30  
+DOOR_LOCK_SECONDS     = 5   
 DRAW_INTERVAL         = 3   
 TICK_INTERVAL         = 1   
 MAX_CONCURRENT_GAMES  = 3
 
+# 🚀 THE FIX: Engine-level memory for perfect, database-independent timers
 _last_draw_time: dict[str, float] = {}
+_boarding_start_times: dict[str, float] = {}
 
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -52,26 +54,9 @@ def get_running_games_count(entry_fee: float) -> int:
 
 def get_player_count(room_id: str) -> int:
     try:
-        res = sb.table("bingo_cards").select("id", count="exact").eq("room_id", room_id).execute()
+        res = sb.table("bingo_cards").select("id", count="exact").eq("room_id", room_id).not_("card_index", "is", "null").execute()
         return res.count or 0
     except Exception: return 0
-
-def get_second_player_join_time(room_id: str):
-    """Finds the absolute database timestamp of when Player 2 bought their card."""
-    try:
-        res = sb.table("bingo_cards").select("created_at").eq("room_id", room_id).order("created_at").limit(2).execute()
-        
-        if res.data and len(res.data) >= 2:
-            row = res.data[1]  # Index 1 is the 2nd player
-            raw_time = row.get("created_at")
-            
-            if raw_time:
-                clean_time = raw_time.replace("Z", "+00:00")
-                return datetime.fromisoformat(clean_time)
-    except Exception as e:
-        log(f"⚠️ Error parsing 2nd player time: {e}")
-        
-    return None
 
 # ══════════════════════════════════════════════════════════════
 # ZOMBIE CLEANUP
@@ -87,7 +72,7 @@ def cleanup_zombie_rooms():
     except Exception: pass
 
 # ══════════════════════════════════════════════════════════════
-# PHASE 1: WAITING → COUNTDOWN (The True 30-Second Rule)
+# PHASE 1: WAITING → COUNTDOWN (The Engine Clock Logic)
 # ══════════════════════════════════════════════════════════════
 def process_waiting_rooms():
     try:
@@ -104,27 +89,26 @@ def process_waiting_rooms():
         running_count = get_running_games_count(entry_fee)
         player_count = get_player_count(room_id)
 
-        # 1. The Room is Empty or Only Has 1 Player (Wait forever)
+        # 1. Not enough players
         if player_count < MIN_PLAYERS:
-            # We don't need to log every second if someone is just sitting there
+            # If players leave and drop below the minimum, reset the clock
+            if room_id in _boarding_start_times:
+                log(f"📉 Room {room_id[:8]} fell below minimum players. Clock paused.")
+                _boarding_start_times.pop(room_id, None)
             continue
 
-        # 2. The Server is Full (Wait in queue)
+        # 2. Server is Full
         if running_count >= MAX_CONCURRENT_GAMES:
             log(f"🛑 QUEUED: Room {room_id[:8]} has {player_count} players but server is full. Waiting...")
             continue
 
-        # 3. We have 2+ Players AND the server has space!
-        second_join = get_second_player_join_time(room_id)
-        
-        if not second_join:
-            # Failsafe: If the database is glitching but we clearly have 2 players, start it.
-            elapsed = COUNTDOWN_SECONDS 
-        else:
-            # Calculate exactly how many seconds have passed since Player 2 joined
-            elapsed = (now_utc() - second_join).total_seconds()
-            # Prevent negative time in case of clock drift
-            elapsed = max(0, elapsed) 
+        # 3. WE HAVE 2+ PLAYERS! Start the engine clock if it hasn't started yet.
+        if room_id not in _boarding_start_times:
+            _boarding_start_times[room_id] = time.time()
+            log(f"⏰ Room {room_id[:8]} hit minimum players! 30-Second boarding phase started.")
+
+        # Calculate exact time passed via the engine's processor
+        elapsed = time.time() - _boarding_start_times[room_id]
         
         if elapsed >= COUNTDOWN_SECONDS:
             # Time is up! Lock the doors!
@@ -135,6 +119,9 @@ def process_waiting_rooms():
                 }).eq("id", room_id).execute()
                 
                 log(f"🟡 Room {room_id[:8]} → DOORS LOCKED ({player_count} players).")
+                
+                # Cleanup our memory timer
+                _boarding_start_times.pop(room_id, None)
 
                 # Immediately spawn the next empty lobby for new players
                 new_room = {
@@ -245,7 +232,7 @@ def ensure_initial_rooms():
 
 def main():
     log("=" * 50)
-    log("🎰 CHELA Bingo Engine Online (Multiplayer Edition)")
+    log("🎰 CHELA Bingo Engine Online (High-Performance Clock Edition)")
     log("=" * 50)
     
     cleanup_zombie_rooms()
