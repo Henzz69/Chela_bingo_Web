@@ -1,18 +1,27 @@
+import os
 import subprocess
 import sys
 
 print("🚀 Starting CHELA Bingo Infrastructure...")
 
-# Start the Engine in the background
-engine_process = subprocess.Popen([sys.executable, "engine/bingo_caller.py"])
+# 1. Hunt for the Engine automatically
+engine_path = "engine/bingo_caller.py"
+if not os.path.exists(engine_path):
+    engine_path = "../engine/bingo_caller.py" # Look one folder up
 
-# Start the Bot in the foreground
+if not os.path.exists(engine_path):
+    print("❌ FATAL: Could not find bingo_caller.py in ./engine or ../engine!")
+else:
+    print(f"✅ Found Engine at: {engine_path}")
+    engine_process = subprocess.Popen([sys.executable, engine_path])
+
+# 2. Start the Bot
 bot_process = subprocess.Popen([sys.executable, "bot.py"])
 
-# Keep the main thread alive
+# 3. Keep the server alive
 try:
-    engine_process.wait()
+    if 'engine_process' in locals(): engine_process.wait()
     bot_process.wait()
 except KeyboardInterrupt:
-    engine_process.terminate()
+    if 'engine_process' in locals(): engine_process.terminate()
     bot_process.terminate()
