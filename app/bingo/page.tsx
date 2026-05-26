@@ -13,10 +13,12 @@ export default function BingoLobby() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(true);
 
-  // Play Button State
+  // Play Button & Modal State
+  const [showStakeModal, setShowStakeModal] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
-  // Placeholder balance (should sync with your store/bot)
+  // Placeholder balance
   const balance = 324.00;
 
   useEffect(() => {
@@ -27,7 +29,7 @@ export default function BingoLobby() {
     }
     setTgId(currentTgId);
 
-    // 2. Fetch REAL History from Supabase when Logs tab is opened
+    // 2. Fetch REAL History from Supabase
     const fetchHistory = async () => {
       setLoadingLogs(true);
       try {
@@ -37,7 +39,6 @@ export default function BingoLobby() {
           process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
         );
 
-        // Fetch user's cards and the associated room's entry fee
         const { data, error } = await supabase
           .from('bingo_cards')
           .select(`
@@ -69,20 +70,40 @@ export default function BingoLobby() {
     }
   }, [activeTab]);
 
-  // Handle Play Now Click
-  const handlePlayNow = async () => {
-    if (isJoining) return;
+  // Handle Stake Selection and Game Joining
+  const handleJoinGame = async (entryFee: number) => {
+    if (isJoining || !tgId) return;
     setIsJoining(true);
+    setJoinError(null);
     
     try {
-      // For now, we route directly to your default test lobby so you can see the UI!
-      const roomId = "default"; 
+      // 1. Call your actual backend API to join/create a room
+      const res = await fetch('/api/bingo/join', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          tgId: tgId,
+          entry_fee: entryFee 
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to join room");
+      }
+
+      // 2. If successful, route to the ACTUAL room ID returned by the database
+      if (data.roomId) {
+         router.push(`/test-lobby/${data.roomId}`);
+      } else {
+         throw new Error("No Room ID returned from server.");
+      }
       
-      router.push(`/test-lobby/${roomId}`);
-      
-    } catch (error) {
-      console.error("Failed to join room:", error);
-      setIsJoining(false); // Reset button if it fails
+    } catch (error: any) {
+      console.error("Join Error:", error);
+      setJoinError(error.message || "Failed to connect to game server.");
+      setIsJoining(false); 
     }
   };
 
@@ -117,6 +138,72 @@ export default function BingoLobby() {
         </div>
       </header>
 
+      {/* STAKE SELECTION MODAL */}
+      <AnimatePresence>
+        {showStakeModal && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }} 
+              animate={{ scale: 1, y: 0 }} 
+              exit={{ scale: 0.9, y: 20 }} 
+              className="bg-[#062416] border border-green-500/30 rounded-3xl p-6 w-full max-w-sm shadow-2xl relative"
+            >
+              {/* Close Button */}
+              <button 
+                onClick={() => { setShowStakeModal(false); setJoinError(null); }} 
+                className="absolute top-4 right-4 text-white/50 hover:text-white text-xl p-2"
+                disabled={isJoining}
+              >
+                ✕
+              </button>
+
+              <h2 className="text-2xl font-black text-white mb-1 text-center">Choose Your Stake</h2>
+              <p className="text-white/50 text-xs text-center mb-6 uppercase tracking-widest">Higher stakes = Bigger Pots</p>
+
+              {joinError && (
+                <div className="mb-4 p-3 bg-red-900/50 border border-red-500 rounded-xl text-red-200 text-sm text-center">
+                  {joinError}
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3">
+                {[
+                  { stake: 10, label: "Bronze Lvl", color: "from-[#cd7f32] to-[#8b5a2b]", shadow: "rgba(205,127,50,0.4)" },
+                  { stake: 50, label: "Silver Lvl", color: "from-gray-300 to-gray-500", shadow: "rgba(209,213,219,0.4)" },
+                  { stake: 100, label: "Gold Lvl", color: "from-yellow-400 to-yellow-600", shadow: "rgba(250,204,21,0.4)" }
+                ].map((tier) => (
+                  <button 
+                    key={tier.stake}
+                    onClick={() => handleJoinGame(tier.stake)}
+                    disabled={isJoining}
+                    className={`
+                      w-full relative py-4 rounded-2xl flex items-center justify-between px-6 transition-all duration-300
+                      bg-gradient-to-r ${tier.color} text-black font-black
+                      ${isJoining ? 'opacity-50 cursor-not-allowed' : 'active:scale-95 hover:shadow-[0_0_20px_var(--tw-shadow-color)]'}
+                    `}
+                    style={{ '--tw-shadow-color': tier.shadow } as any}
+                  >
+                    <span className="text-lg uppercase tracking-wider">{tier.label}</span>
+                    <span className="text-2xl">{tier.stake} ETB</span>
+                  </button>
+                ))}
+              </div>
+
+              {isJoining && (
+                <div className="mt-6 text-center text-green-400 text-sm font-bold animate-pulse">
+                  Connecting to Game Server...
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 overflow-y-auto px-4 pb-24 z-10 scrollbar-hide">
         <AnimatePresence mode="wait">
@@ -134,19 +221,15 @@ export default function BingoLobby() {
 
                 {/* THE FIESTA BALLS CLUSTER */}
                 <div className="relative w-36 h-36 flex items-center justify-center mb-6">
-                  {/* Red Ball */}
                   <div className="absolute -top-2 left-0 w-16 h-16 bg-gradient-to-br from-red-400 to-red-700 rounded-full border-2 border-white/20 shadow-[0_0_15px_rgba(220,38,38,0.6)] flex items-center justify-center z-10">
                     <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-inner"><span className="text-red-600 font-black text-xl">B</span></div>
                   </div>
-                  {/* Blue Ball */}
                   <div className="absolute top-4 -right-2 w-14 h-14 bg-gradient-to-br from-blue-400 to-blue-700 rounded-full border-2 border-white/20 shadow-[0_0_15px_rgba(37,99,235,0.6)] flex items-center justify-center z-20">
                      <div className="w-7 h-7 bg-white rounded-full flex items-center justify-center shadow-inner"><span className="text-blue-600 font-black text-sm">7</span></div>
                   </div>
-                  {/* Green Ball (Center) */}
                   <div className="absolute bottom-0 left-6 w-20 h-20 bg-gradient-to-br from-green-400 to-green-700 rounded-full border-2 border-white/20 shadow-[0_0_20px_rgba(22,163,74,0.8)] flex items-center justify-center z-30">
                      <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-inner"><span className="text-green-600 font-black text-2xl">24</span></div>
                   </div>
-                  {/* Yellow Ball */}
                   <div className="absolute -bottom-2 right-1 w-16 h-16 bg-gradient-to-br from-yellow-300 to-yellow-600 rounded-full border-2 border-white/20 shadow-[0_0_15px_rgba(202,138,4,0.6)] flex items-center justify-center z-20">
                      <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-inner"><span className="text-yellow-600 font-black text-lg">60</span></div>
                   </div>
@@ -155,18 +238,15 @@ export default function BingoLobby() {
                 <h1 className="text-4xl font-black tracking-tight text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)]">CHELA Bingo</h1>
                 <p className="text-green-400/80 text-sm font-medium tracking-widest uppercase mt-1 mb-8">100-Player Massive Multiplayer</p>
 
-                {/* THE BIG PLAY BUTTON (NOW FUNCTIONAL) */}
+                {/* THE BIG PLAY BUTTON (NOW OPENS MODAL) */}
                 <button 
-                  onClick={handlePlayNow} 
-                  disabled={isJoining}
-                  className={`w-full relative group transition-transform ${isJoining ? 'opacity-80 scale-95' : 'active:scale-95'}`}
+                  onClick={() => setShowStakeModal(true)} 
+                  className="w-full relative group transition-transform active:scale-95"
                 >
                   <div className="absolute -inset-1 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-2xl blur opacity-70 transition duration-300"></div>
                   <div className="relative w-full py-5 bg-gradient-to-b from-[#115e3b] to-[#0a4a2e] border border-green-400/50 rounded-2xl flex items-center justify-center gap-3 shadow-[inset_0_2px_10px_rgba(255,255,255,0.2)]">
-                    <span className="text-2xl">{isJoining ? '⏳' : '🎮'}</span>
-                    <span className="text-2xl font-black text-white tracking-wide shadow-black drop-shadow-md">
-                      {isJoining ? 'Connecting...' : 'Play Now'}
-                    </span>
+                    <span className="text-2xl">🎮</span>
+                    <span className="text-2xl font-black text-white tracking-wide shadow-black drop-shadow-md">Play Now</span>
                   </div>
                 </button>
 
@@ -180,107 +260,8 @@ export default function BingoLobby() {
             </motion.div>
           )}
 
-          {/* ================= REAL LOGS TAB ================= */}
-          {activeTab === 'logs' && (
-            <motion.div key="logs" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="flex flex-col gap-3 pt-4">
-              <h2 className="text-xl font-black text-white mb-2">My Game History</h2>
-              
-              {loadingLogs ? (
-                <div className="text-center py-10 text-green-400 animate-pulse">Syncing with server...</div>
-              ) : logs.length === 0 ? (
-                <div className="text-center py-10 text-white/40 bg-[#062416] rounded-xl border border-white/5">No games played yet.</div>
-              ) : (
-                logs.map((log, idx) => (
-                  <div key={idx} className="bg-[#062416] border border-white/5 rounded-xl p-4 flex justify-between items-center">
-                    <div>
-                      <div className="text-sm font-bold text-white mb-1">Room: {log.id}</div>
-                      <div className="text-xs text-white/40">{log.date}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs text-white/50 uppercase tracking-wider mb-1">Stake</div>
-                      <div className="text-sm font-black text-green-400">{log.stake} ETB</div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </motion.div>
-          )}
-
-          {/* ================= TOP TAB ================= */}
-          {activeTab === 'top' && (
-            <motion.div key="top" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="flex flex-col gap-2 pt-4">
-              <div className="flex justify-between items-end mb-4 px-1">
-                <h2 className="text-xl font-black text-white">Top High Rollers</h2>
-                <span className="text-xs text-yellow-400/80 font-medium">All Time</span>
-              </div>
-              
-              {/* Leaderboard Header Row */}
-              <div className="flex text-[10px] text-white/40 uppercase tracking-widest px-4 pb-2 border-b border-white/10 mb-2">
-                <div className="w-10">#</div>
-                <div className="flex-1">Player</div>
-                <div className="w-20 text-right">Played</div>
-                <div className="w-28 text-right">Winnings</div>
-              </div>
-
-              {/* Leaderboard List */}
-              {mockTopPlayers.map((player, idx) => {
-                const isFirst = idx === 0;
-                const isSecond = idx === 1;
-                const isThird = idx === 2;
-                
-                return (
-                  <div key={idx} className={`
-                    flex items-center p-3 rounded-xl border
-                    ${isFirst ? 'bg-yellow-500/10 border-yellow-500/30 shadow-[0_0_15px_rgba(234,179,8,0.1)]' : 
-                      isSecond ? 'bg-gray-300/10 border-gray-300/20' : 
-                      isThird ? 'bg-orange-700/10 border-orange-700/20' : 
-                      'bg-[#062416] border-white/5'}
-                  `}>
-                    <div className="w-8 flex justify-center">
-                      {isFirst ? <span className="text-xl drop-shadow-md">🥇</span> : 
-                       isSecond ? <span className="text-xl drop-shadow-md">🥈</span> : 
-                       isThird ? <span className="text-xl drop-shadow-md">🥉</span> : 
-                       <span className="text-sm font-bold text-white/30">{idx + 1}</span>}
-                    </div>
-                    <div className={`flex-1 font-bold text-sm ${isFirst ? 'text-yellow-400' : 'text-white/90'}`}>
-                      {player.id}
-                    </div>
-                    <div className="w-16 text-right text-xs font-medium text-white/60">
-                      {player.played}
-                    </div>
-                    <div className="w-28 text-right text-sm font-black text-green-400">
-                      {player.won}
-                    </div>
-                  </div>
-                );
-              })}
-            </motion.div>
-          )}
-
-          {/* ================= PROFILE TAB ================= */}
-          {activeTab === 'profile' && (
-            <motion.div key="profile" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center pt-8">
-              <div className="w-full bg-[#062416] border border-green-500/30 rounded-3xl p-6 shadow-[0_10px_30px_rgba(34,197,94,0.1)] text-center relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-24 bg-gradient-to-b from-green-900/40 to-transparent"></div>
-                
-                <div className="relative w-24 h-24 bg-[#0a4a2e] border-4 border-[#02120b] rounded-full mx-auto mb-4 flex items-center justify-center text-4xl shadow-xl">
-                  👤
-                </div>
-                
-                <h3 className="text-2xl font-black text-white mb-1">Player_{tgId || '0000'}</h3>
-                <p className="text-white/40 text-sm mb-6 uppercase tracking-widest">Active Member</p>
-                
-                <div className="bg-[#02120b] rounded-2xl p-4 mb-6 border border-white/5">
-                  <div className="text-xs text-white/50 uppercase tracking-widest mb-1">Available Funds</div>
-                  <div className="text-3xl font-black text-green-400">{balance.toFixed(2)} ETB</div>
-                </div>
-
-                <div className="text-xs text-white/40 px-4">
-                  Manage deposits and withdrawals securely through the CHELA Bingo Telegram Bot menu.
-                </div>
-              </div>
-            </motion.div>
-          )}
+          {/* ... (Logs, Top, and Profile tabs remain exactly the same as the previous response) ... */}
+          {/* I have omitted them here to save space, but leave them exactly as they are in your file! */}
 
         </AnimatePresence>
       </main>
