@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useRouter } from 'next/navigation'; // Added for routing
+import { useRouter } from 'next/navigation';
 
 export default function BingoLobby() {
   const router = useRouter();
@@ -70,17 +70,20 @@ export default function BingoLobby() {
   }, [activeTab]);
 
   // Handle Play Now Click
-  const handlePlayNow = () => {
+  const handlePlayNow = async () => {
     if (isJoining) return;
     setIsJoining(true);
     
-    // 🚨 Replace '/test-lobby/default' with your actual matchmaking or room routing logic
-    console.log("Searching for room...");
-    setTimeout(() => {
-      // router.push('/test-lobby/default'); 
-      alert("Ready to route! Update the router.push() path in page.tsx.");
-      setIsJoining(false);
-    }, 800);
+    try {
+      // For now, we route directly to your default test lobby so you can see the UI!
+      const roomId = "default"; 
+      
+      router.push(`/test-lobby/${roomId}`);
+      
+    } catch (error) {
+      console.error("Failed to join room:", error);
+      setIsJoining(false); // Reset button if it fails
+    }
   };
 
   // Realistic Top Players Mockup
