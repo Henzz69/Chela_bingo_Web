@@ -2,14 +2,19 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useRouter } from 'next/navigation'; // Added for routing
 
 export default function BingoLobby() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'home' | 'logs' | 'top' | 'profile'>('home');
   const [tgId, setTgId] = useState<number | null>(null);
   
   // Real History State
   const [logs, setLogs] = useState<any[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(true);
+
+  // Play Button State
+  const [isJoining, setIsJoining] = useState(false);
 
   // Placeholder balance (should sync with your store/bot)
   const balance = 324.00;
@@ -64,6 +69,20 @@ export default function BingoLobby() {
     }
   }, [activeTab]);
 
+  // Handle Play Now Click
+  const handlePlayNow = () => {
+    if (isJoining) return;
+    setIsJoining(true);
+    
+    // 🚨 Replace '/test-lobby/default' with your actual matchmaking or room routing logic
+    console.log("Searching for room...");
+    setTimeout(() => {
+      // router.push('/test-lobby/default'); 
+      alert("Ready to route! Update the router.push() path in page.tsx.");
+      setIsJoining(false);
+    }, 800);
+  };
+
   // Realistic Top Players Mockup
   const mockTopPlayers = [
     { id: "USER_9942", played: 800, won: "15,000 ETB" },
@@ -105,7 +124,7 @@ export default function BingoLobby() {
               
               <div className="relative w-full max-w-sm flex flex-col items-center mt-4">
                 
-                {/* Floating Emojis (Universally supported) */}
+                {/* Floating Emojis */}
                 <div className="absolute -top-4 -left-2 text-3xl animate-bounce" style={{ animationDelay: '0s' }}>💰</div>
                 <div className="absolute top-10 -right-2 text-2xl animate-bounce" style={{ animationDelay: '0.5s' }}>💎</div>
                 <div className="absolute -bottom-4 left-2 text-2xl animate-bounce" style={{ animationDelay: '1s' }}>🎲</div>
@@ -133,12 +152,18 @@ export default function BingoLobby() {
                 <h1 className="text-4xl font-black tracking-tight text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)]">CHELA Bingo</h1>
                 <p className="text-green-400/80 text-sm font-medium tracking-widest uppercase mt-1 mb-8">100-Player Massive Multiplayer</p>
 
-                {/* The Big Play Button */}
-                <button className="w-full relative group">
+                {/* THE BIG PLAY BUTTON (NOW FUNCTIONAL) */}
+                <button 
+                  onClick={handlePlayNow} 
+                  disabled={isJoining}
+                  className={`w-full relative group transition-transform ${isJoining ? 'opacity-80 scale-95' : 'active:scale-95'}`}
+                >
                   <div className="absolute -inset-1 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-2xl blur opacity-70 transition duration-300"></div>
-                  <div className="relative w-full py-5 bg-gradient-to-b from-[#115e3b] to-[#0a4a2e] border border-green-400/50 rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-transform shadow-[inset_0_2px_10px_rgba(255,255,255,0.2)]">
-                    <span className="text-2xl">🎮</span>
-                    <span className="text-2xl font-black text-white tracking-wide shadow-black drop-shadow-md">Play Now</span>
+                  <div className="relative w-full py-5 bg-gradient-to-b from-[#115e3b] to-[#0a4a2e] border border-green-400/50 rounded-2xl flex items-center justify-center gap-3 shadow-[inset_0_2px_10px_rgba(255,255,255,0.2)]">
+                    <span className="text-2xl">{isJoining ? '⏳' : '🎮'}</span>
+                    <span className="text-2xl font-black text-white tracking-wide shadow-black drop-shadow-md">
+                      {isJoining ? 'Connecting...' : 'Play Now'}
+                    </span>
                   </div>
                 </button>
 
