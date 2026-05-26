@@ -225,7 +225,6 @@ export const useBingoStore = create<BingoState>((set, get) => ({
       )
       .subscribe();
 
-    // 🚀 THE FIX: Wildcard listener that aggressively adds any new card index to the Set
     const newCardsChannel = supabase
       .channel(`bingo-cards-${roomId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bingo_cards', filter: `room_id=eq.${roomId}`}, 
@@ -293,6 +292,7 @@ export const useBingoStore = create<BingoState>((set, get) => ({
     if (channel) supabase.removeChannel(channel);
     if (cardsChannel) supabase.removeChannel(cardsChannel);
     
+    // 🚀 AGGRESSIVE STATE WIPE
     set({
       screen: 'lobby', currentRoom: null, mySession: null, drawnNumbers: [],
       daubed: new Set([12]), winResult: null, gameStatus: 'idle',
@@ -312,6 +312,13 @@ export const useBingoStore = create<BingoState>((set, get) => ({
       if (data && data.found) {
         const room = data.room as BingoRoom;
         const card = data.card as GameSession;
+
+        // 🚀 THE GHOST BUSTER FIX: If the room is finished, reject the recovery entirely
+        if (room.status === 'finished') {
+          console.warn("Attempted to recover a finished room. Ghost busted. Routing to lobby.");
+          set({ isRecovering: false, screen: 'lobby' });
+          return;
+        }
 
         get().generateAllCardsForRoom(room.generation_seed || room.id);
         get().subscribeToRoomEvents(room.id);
