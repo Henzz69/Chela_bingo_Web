@@ -59,12 +59,11 @@ def get_player_count(room_id: str) -> int:
 def get_second_player_join_time(room_id: str):
     """Finds the absolute database timestamp of when Player 2 bought their card."""
     try:
-        # THE FIX: Order by 'created_at' to perfectly sort timestamps instead of random UUIDs
-        res = sb.table("bingo_cards").select("*").eq("room_id", room_id).order("created_at").limit(2).execute()
+        res = sb.table("bingo_cards").select("created_at").eq("room_id", room_id).order("created_at").limit(2).execute()
         
         if res.data and len(res.data) >= 2:
             row = res.data[1]  # Index 1 is the 2nd player
-            raw_time = row.get("joined_at") or row.get("created_at") or row.get("inserted_at")
+            raw_time = row.get("created_at")
             
             if raw_time:
                 clean_time = raw_time.replace("Z", "+00:00")
@@ -107,8 +106,7 @@ def process_waiting_rooms():
 
         # 1. The Room is Empty or Only Has 1 Player (Wait forever)
         if player_count < MIN_PLAYERS:
-            if player_count == 1:
-                log(f"👤 Room {room_id[:8]} has 1 player. Waiting for an opponent...")
+            # We don't need to log every second if someone is just sitting there
             continue
 
         # 2. The Server is Full (Wait in queue)
@@ -152,7 +150,7 @@ def process_waiting_rooms():
             # Still ticking down...
             remaining = int(COUNTDOWN_SECONDS - elapsed)
             if remaining % 5 == 0 and remaining > 0:  # Print every 5 seconds
-                log(f"⏳ Room {room_id[:8]} starting in {remaining}s... ({player_count} players joined)")
+                log(f"⏳ Room {room_id[:8]} boarding phase ends in {remaining}s... ({player_count}/100 players joined)")
 
 # ══════════════════════════════════════════════════════════════
 # PHASE 2: COUNTDOWN → ACTIVE (Door Lock Buffer)
@@ -247,7 +245,7 @@ def ensure_initial_rooms():
 
 def main():
     log("=" * 50)
-    log("🎰 CHELA Bingo Engine Online (Stateless Edition)")
+    log("🎰 CHELA Bingo Engine Online (Multiplayer Edition)")
     log("=" * 50)
     
     cleanup_zombie_rooms()
