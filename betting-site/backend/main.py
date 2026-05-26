@@ -1,28 +1,41 @@
-import subprocess
+import os
 import sys
-from pathlib import Path
+import subprocess
+import time
 
-print("🚀 Starting CHELA Bingo Infrastructure...")
+print("🚀 Booting CHELA Bingo Infrastructure...")
 
-# 1. Hunt for the Engine automatically EVERYWHERE
-engine_path = None
-for path in Path('.').rglob('bingo_caller.py'):
-    engine_path = str(path)
-    break
+# Force the script to run from the 'betting-site' directory so it can see both folders
+if os.path.basename(os.getcwd()) == "backend":
+    os.chdir("..")
 
-if not engine_path:
-    print("❌ FATAL: Could not find bingo_caller.py ANYWHERE in the project directory!")
+print(f"📂 Running from Directory: {os.getcwd()}")
+
+engine_path = "engine/bingo_caller.py"
+bot_path = "backend/bot.py"
+
+# 1. Start the Engine
+if not os.path.exists(engine_path):
+    print(f"❌ FATAL: Cannot find engine at {engine_path}")
 else:
-    print(f"✅ Found Engine at: {engine_path}")
-    engine_process = subprocess.Popen([sys.executable, engine_path])
+    print("✅ Engine found! Starting Bingo Caller...")
+    engine_proc = subprocess.Popen([sys.executable, engine_path])
 
-# 2. Start the Bot
-bot_process = subprocess.Popen([sys.executable, "bot.py"])
+# 2. The Anti-Conflict Sleep (Fixes Error 409)
+print("⏳ Waiting 10 seconds for old Railway containers to shut down before connecting to Telegram...")
+time.sleep(10)
 
-# 3. Keep the server alive
+# 3. Start the Bot
+if not os.path.exists(bot_path):
+    print(f"❌ FATAL: Cannot find bot at {bot_path}")
+else:
+    print("🤖 Starting Telegram Bot...")
+    bot_proc = subprocess.Popen([sys.executable, bot_path])
+
+# 4. Keep alive
 try:
-    if 'engine_process' in locals(): engine_process.wait()
-    bot_process.wait()
+    if 'engine_proc' in locals(): engine_proc.wait()
+    if 'bot_proc' in locals(): bot_proc.wait()
 except KeyboardInterrupt:
-    if 'engine_process' in locals(): engine_process.terminate()
-    bot_process.terminate()
+    if 'engine_proc' in locals(): engine_proc.terminate()
+    if 'bot_proc' in locals(): bot_proc.terminate()
