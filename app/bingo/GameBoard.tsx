@@ -7,6 +7,9 @@ import { columnLetter } from '@/lib/bingoCards';
 
 const COLUMNS = ['B', 'I', 'N', 'G', 'O'];
 
+// 🚀 CONFIGURE YOUR BUSINESS LOGIC HERE
+const HOUSE_EDGE = 0.20; // 20% house cut from the total pot
+
 interface Props {
   tgId: number;
 }
@@ -30,17 +33,22 @@ export default function BingoGameBoard({ tgId }: Props) {
   } = useBingoStore();
 
   const [countdownStart, setCountdownStart] = useState<number>(30);
+  const playerCount = takenCardIds.size;
+  
+  // 🚀 FIX 1: The timer trigger is now a flat boolean. 
+  // It won't restart when players 3, 4, or 50 join!
+  const isReadyToStart = playerCount >= 2;
 
   useEffect(() => {
-    if (gameStatus === 'waiting' && takenCardIds.size >= 2) {
+    if (gameStatus === 'waiting' && isReadyToStart) {
       const interval = setInterval(() => {
         setCountdownStart((prev) => (prev > 0 ? prev - 1 : 0));
       }, 1000);
       return () => clearInterval(interval);
-    } else {
+    } else if (gameStatus !== 'waiting') {
       setCountdownStart(30);
     }
-  }, [gameStatus, takenCardIds.size]);
+  }, [gameStatus, isReadyToStart]);
 
   const lastDrawn = drawnNumbers.length > 0 ? drawnNumbers[drawnNumbers.length - 1] : null;
 
@@ -59,15 +67,16 @@ export default function BingoGameBoard({ tgId }: Props) {
 
   const card: number[] = mySession.grid ?? [];
   const isWinner = winnerId === String(tgId);          
-  const isLoser = gameStatus === 'finished' && winnerId && winnerId !== String(tgId);
-  const playerCount = takenCardIds.size;
+
+  // 🚀 FIX 2: Dynamic Derash calculation
+  const totalStaked = currentRoom.entry_fee * playerCount;
+  const currentPot = totalStaked * (1 - HOUSE_EDGE);
 
   return (
     <div className="w-full h-[100dvh] overflow-hidden bg-[#042014] text-white flex flex-col pt-safe">
       
       {/* ── UPGRADED TOP NAV (Stake & Derash Dashboard) ── */}
       <nav className="shrink-0 bg-[#0a4a2e] border-b border-white/10 px-3 py-2 flex flex-col gap-2">
-        {/* Top Row: Title, Exit, and Player Count */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button onClick={leaveGame} className="text-white/40 hover:text-white transition text-[10px] font-bold uppercase tracking-widest bg-black/20 px-2.5 py-1.5 rounded-lg border border-white/5">
@@ -78,19 +87,19 @@ export default function BingoGameBoard({ tgId }: Props) {
               <span className="text-[9px] text-white/40 block">Card #{mySession.card_index}</span>
             </div>
           </div>
-          <div className="text-[9px] font-bold text-white/50 bg-black/20 px-2 py-1 rounded border border-white/5 uppercase tracking-widest">
-            {playerCount} / {currentRoom.max_players} P
+          <div className="text-[10px] font-black text-green-400 bg-green-500/10 px-2 py-1 rounded border border-green-500/20 uppercase tracking-widest">
+            {playerCount} PLAYERS
           </div>
         </div>
 
-        {/* Bottom Row: Stake & Derash (Prize Pot) */}
         <div className="flex gap-2 w-full max-w-sm mx-auto">
           <div className="bg-[#063320] border border-white/10 rounded-lg flex-1 py-1 text-center shadow-inner">
             <div className="text-white font-black text-[11px]">{currentRoom.entry_fee} ETB</div>
             <div className="text-[8px] text-white/40 uppercase tracking-widest">Stake</div>
           </div>
           <div className="bg-gradient-to-b from-[#0d5c3a] to-[#0a4a2e] border border-green-500/30 rounded-lg flex-1 py-1 text-center shadow-[0_0_10px_rgba(34,197,94,0.1)]">
-            <div className="text-yellow-400 font-black text-[11px]">{currentRoom.entry_fee * currentRoom.max_players} ETB</div>
+            {/* The Pot will now dynamically tick UP as more players join! */}
+            <div className="text-yellow-400 font-black text-[11px]">{currentPot > 0 ? currentPot.toFixed(2) : '0.00'} ETB</div>
             <div className="text-[8px] text-green-100/60 uppercase tracking-widest">Derash (Pot)</div>
           </div>
         </div>
@@ -99,7 +108,6 @@ export default function BingoGameBoard({ tgId }: Props) {
       {/* ── MAIN LAYOUT (Flexible Container) ── */}
       <main className="flex-1 min-h-0 p-2 flex flex-col gap-2 w-full max-w-md mx-auto">
         
-        {/* Error Toaster */}
         <AnimatePresence>
           {error && (
             <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="shrink-0 fixed top-24 left-4 right-4 z-50 bg-red-500/90 border border-red-500 text-white px-4 py-3 rounded-xl flex gap-3 items-center shadow-2xl backdrop-blur-sm">
@@ -109,21 +117,19 @@ export default function BingoGameBoard({ tgId }: Props) {
           )}
         </AnimatePresence>
 
-        {/* ── HUD Dashboard (Status & Last Drawn) ── */}
+        {/* ── HUD Dashboard ── */}
         <div className="shrink-0 flex gap-2 h-24">
-          
-          {/* Status Box */}
           <div className="flex-1 bg-[#0a4a2e] border border-white/10 rounded-xl p-3 flex flex-col justify-center items-center text-center relative overflow-hidden">
             <AnimatePresence mode="wait">
               {gameStatus === 'waiting' && playerCount < 2 && (
                 <motion.div key="wait1" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-yellow-400">
                   <div className="text-lg mb-1 animate-pulse">⏳</div>
-                  <div className="text-[11px] font-bold uppercase tracking-widest">Waiting for Opponent</div>
+                  <div className="text-[11px] font-bold uppercase tracking-widest">Waiting for Players</div>
                 </motion.div>
               )}
               {gameStatus === 'waiting' && playerCount >= 2 && (
                 <motion.div key="wait2" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="text-green-400">
-                  <div className="text-[10px] uppercase font-bold text-green-500/70 mb-1">Match Found</div>
+                  <div className="text-[10px] uppercase font-bold text-green-500/70 mb-1">Lobby Open</div>
                   <div className="text-2xl font-black">{countdownStart}s</div>
                 </motion.div>
               )}
@@ -143,7 +149,6 @@ export default function BingoGameBoard({ tgId }: Props) {
             </AnimatePresence>
           </div>
 
-          {/* Last Drawn Ball */}
           <div className="aspect-square h-full bg-[#0a4a2e] border border-white/10 rounded-xl flex flex-col justify-center items-center relative">
             <div className="absolute top-2 text-[8px] text-white/30 uppercase tracking-widest w-full text-center">Last Draw</div>
             <AnimatePresence mode="wait">
@@ -163,7 +168,6 @@ export default function BingoGameBoard({ tgId }: Props) {
 
         {/* ── 5x5 BINGO GRID ── */}
         <div className="shrink-0 w-full bg-[#0a4a2e] border border-white/10 rounded-xl p-2 relative">
-          
           <AnimatePresence>
             {winResult?.won && gameStatus === 'active' && (
               <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-sm rounded-xl">
@@ -249,7 +253,6 @@ export default function BingoGameBoard({ tgId }: Props) {
             )}
           </div>
         </div>
-
       </main>
 
       {/* ── ENDGAME MODAL ── */}
