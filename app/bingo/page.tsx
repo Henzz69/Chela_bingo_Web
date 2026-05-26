@@ -1,264 +1,201 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { useBingoStore, BingoRoom } from '@/store/bingoStore';
-import { useTelegram } from '@/lib/useTelegram';
-import BingoGameBoard from './GameBoard';
-import BingoCardSelection from './CardSelection';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
-interface WalletData {
-  name: string;
-  wallet: number; 
-  transactions: Array<any>;
-  gameHistory: Array<any>;
-}
+export default function BingoLobby() {
+  const [activeTab, setActiveTab] = useState<'home' | 'logs' | 'top' | 'profile'>('home');
+  
+  // Placeholder balance (replace with your actual state/store)
+  const balance = 324.00;
 
-// 🚀 UPGRADED: 100-Player Massive Multiplayer Config
-// Prize calculates a full 100-player lobby minus a 20% house edge.
-const STAKE_OPTIONS = [
-  { label: '10 ETB', amount: 10, players: 100, maxPrize: 800 },
-  { label: '25 ETB', amount: 25, players: 100, maxPrize: 2000 },
-  { label: '50 ETB', amount: 50, players: 100, maxPrize: 4000 },
-  { label: '100 ETB', amount: 100, players: 100, maxPrize: 8000 },
-];
+  // 1. Mock Data for Logs
+  const mockLogs = [
+    { id: 'RM-A1B2', stake: 10, date: 'Today, 14:20' },
+    { id: 'RM-C3D4', stake: 50, date: 'Today, 12:05' },
+    { id: 'RM-E5F6', stake: 100, date: 'Yesterday' },
+    { id: 'RM-G7H8', stake: 10, date: 'May 24' },
+    { id: 'RM-I9J0', stake: 10, date: 'May 24' },
+  ];
 
-const NAV_TABS = [
-  { key: 'home',   icon: '🏠', label: 'Home'    },
-  { key: 'logs',   icon: '📋', label: 'Logs'    },
-  { key: 'top',    icon: '🏆', label: 'Top'     },
-  { key: 'me',     icon: '👤', label: 'Profile' },
-] as const;
-
-type TabKey = typeof NAV_TABS[number]['key'];
-
-export default function BingoPage() {
-  const { tgId, isTelegram, haptic } = useTelegram();
-  const { screen, fetchRooms, isRecovering, recoverSession } = useBingoStore();
-
-  const [tab, setTab] = useState<TabKey>('home');
-  const [loadingStakeId, setLoadingStakeId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const [wallet, setWallet] = useState<WalletData | null>(null);
-  const [walletLoading, setWalletLoading] = useState(false);
-
-  const fetchWallet = useCallback(async (id: number) => {
-    setWalletLoading(true);
-    try {
-      const res = await fetch(`/api/bingo/wallet?tgId=${id}&t=${Date.now()}`, { cache: 'no-store' });
-      if (res.ok) {
-        const data = await res.json();
-        setWallet(data);
-      }
-    } catch {
-      // silent fail
-    } finally {
-      setWalletLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (tgId) {
-      recoverSession(tgId);
-      fetchWallet(tgId);
-    }
-  }, [tgId, recoverSession, fetchWallet]);
-
-  useEffect(() => {
-    if (screen === 'lobby') {
-      fetchRooms();
-    }
-  }, [screen, fetchRooms]);
-
-  const handleJoinStake = async (opt: typeof STAKE_OPTIONS[0]) => {
-    if (!tgId) {
-      setError('Telegram ID not found.');
-      return;
-    }
-    
-    setLoadingStakeId(opt.amount.toString());
-    setError(null);
-    
-    try {
-      // 🚀 Passing the updated opt.players (100) to the backend
-      await useBingoStore.getState().joinStakeRoom(tgId, opt.amount, opt.players);
-      if (isTelegram) haptic.impact('medium');
-    } catch (e: any) {
-      setError(e.message || 'Failed to join room. Check your balance.');
-      if (isTelegram) haptic.notification('error');
-    } finally {
-      setLoadingStakeId(null);
-    }
-  };
-
-  if (!isTelegram && !tgId) {
-    return (
-      <div className="min-h-screen bg-[#042014] flex items-center justify-center p-6 safe-area">
-        <div className="text-center">
-          <div className="text-5xl mb-4">🎱</div>
-          <h2 className="text-white text-xl font-bold mb-2">CHELA Bingo</h2>
-          <p className="text-white/60 text-sm">Open this app from the Telegram bot to play.</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (isRecovering && tgId) {
-    return (
-      <div className="min-h-screen bg-[#042014] flex flex-col items-center justify-center safe-area">
-        <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-emerald-500 mt-4 font-mono font-bold tracking-widest animate-pulse">RECOVERING SESSION...</p>
-      </div>
-    );
-  }
-
-  if (screen === 'game') return <BingoGameBoard tgId={tgId!} />;
-  if (screen === 'card-select') return <BingoCardSelection tgId={tgId!} />;
+  // 2. Mock Data for Top Players
+  const mockTopPlayers = [
+    { id: "USER_9942", played: 8420, won: "850,000 ETB" },
+    { id: "USER_8123", played: 7110, won: "620,000 ETB" },
+    { id: "USER_7741", played: 6500, won: "475,500 ETB" },
+    { id: "USER_3392", played: 5200, won: "390,000 ETB" },
+    { id: "USER_1024", played: 4800, won: "250,000 ETB" },
+    { id: "USER_5581", played: 4100, won: "180,000 ETB" },
+    { id: "USER_9921", played: 3800, won: "145,000 ETB" },
+    { id: "USER_4412", played: 3100, won: "110,000 ETB" },
+    { id: "USER_8829", played: 2900, won: "95,000 ETB" },
+    { id: "USER_1102", played: 2100, won: "60,000 ETB" },
+  ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#042014] via-[#052e18] to-[#021a0c] flex flex-col pt-safe">
+    <div className="w-full h-[100dvh] bg-[#02120b] text-white flex flex-col font-sans relative overflow-hidden">
       
-      {/* Top Header Bar */}
-      <div className="flex items-center justify-between px-4 pt-3 pb-3 border-b border-white/10">
-        <div className="flex items-center gap-2">
-          <span className="text-2xl">🎱</span>
-          <span className="text-white font-extrabold text-lg tracking-wide">CHELA Bingo</span>
-        </div>
-        <div className="w-8 h-8" />
+      {/* Background Casino Glows */}
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+        <div className="absolute top-[-10%] left-[-20%] w-96 h-96 bg-green-500/10 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-[20%] right-[-20%] w-96 h-96 bg-yellow-500/10 rounded-full blur-3xl"></div>
       </div>
 
-      {/* Persistent Balance Indicator */}
-      <div className="mx-4 mt-3 mb-1">
-        <div className="bg-[#0a4a2e]/80 border border-white/10 rounded-2xl px-4 py-2 flex items-center justify-between">
-          <span className="text-white/60 text-xs">Balance</span>
-          <span className="text-green-400 font-bold text-base">
-            {walletLoading ? '…' : (wallet?.wallet !== undefined && wallet?.wallet !== null) ? `${Number(wallet.wallet).toFixed(2)} ETB` : '0.00 ETB'}
-          </span>
+      {/* HEADER: Balance Tracker */}
+      <header className="shrink-0 p-4 z-10">
+        <div className="bg-[#062416] border border-green-500/30 rounded-2xl p-4 flex justify-between items-center shadow-[0_4px_20px_rgba(34,197,94,0.15)]">
+          <span className="text-white/60 font-medium text-sm">Balance</span>
+          <span className="text-green-400 font-black text-xl tracking-tight">{balance.toFixed(2)} ETB</span>
         </div>
-      </div>
+      </header>
 
-      <AnimatePresence mode="wait">
-        {screen === 'lobby' && (
-          <motion.div key="lobby" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} transition={{ duration: 0.25 }} className="flex-1 flex flex-col">
-            
-            <div className="px-4 py-6 text-center">
-              <motion.div animate={{ scale: [1, 1.08, 1] }} transition={{ repeat: Infinity, duration: 2.5 }} className="text-6xl mb-3">🎱</motion.div>
-              <h1 className="text-white text-2xl font-extrabold mb-1">CHELA Bingo</h1>
-              <p className="text-white/50 text-sm">100-Player Massive Multiplayer</p>
-            </div>
+      {/* MAIN CONTENT AREA */}
+      <main className="flex-1 overflow-y-auto px-4 pb-24 z-10 scrollbar-hide">
+        <AnimatePresence mode="wait">
+          
+          {/* ================= HOME TAB ================= */}
+          {activeTab === 'home' && (
+            <motion.div key="home" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="flex flex-col items-center justify-center h-full gap-6">
+              
+              {/* Casino Centerpiece */}
+              <div className="relative w-full max-w-sm flex flex-col items-center mt-8">
+                {/* Floating Emojis for Casino Vibe */}
+                <div className="absolute -top-6 -left-4 text-3xl animate-bounce" style={{ animationDelay: '0s' }}>💸</div>
+                <div className="absolute top-10 -right-2 text-2xl animate-bounce" style={{ animationDelay: '0.5s' }}>🪙</div>
+                <div className="absolute -bottom-4 left-4 text-2xl animate-bounce" style={{ animationDelay: '1s' }}>🎰</div>
 
-            {tab === 'home' && (
-              <motion.div key="home-tab" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col px-4 z-10 safe-area-bottom">
-                <motion.button whileTap={{ scale: 0.97 }} onClick={() => useBingoStore.setState({ screen: 'select' })} className="w-full py-4 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold text-xl shadow-[0_8px_32px_rgba(74,222,128,0.35)] active:shadow-none transition-all">
-                  🎮 Play Now
-                </motion.button>
-                <div className="mt-6 bg-[#0a4a2e]/40 border border-white/5 rounded-2xl p-5 text-center">
-                   <p className="text-white/80 text-sm font-medium">Servers are live. Join a room to start winning!</p>
-                </div>
-              </motion.div>
-            )}
-
-            {tab === 'logs' && (
-              <motion.div key="logs-tab" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mx-4 bg-[#0a4a2e]/60 border border-white/10 rounded-2xl p-6 mb-24 text-center">
-                <div className="text-4xl mb-3 opacity-50">📋</div>
-                <h3 className="text-white font-bold mb-2 text-sm uppercase tracking-wider">Game Logs</h3>
-                <p className="text-white/50 text-xs">Your recent match history will appear here.</p>
-              </motion.div>
-            )}
-
-            {tab === 'top' && (
-              <motion.div key="top-tab" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mx-4 bg-[#0a4a2e]/60 border border-white/10 rounded-2xl p-6 mb-24 text-center">
-                <div className="text-4xl mb-3 opacity-50">🏆</div>
-                <h3 className="text-white font-bold mb-2 text-sm uppercase tracking-wider">Leaderboard</h3>
-                <p className="text-white/50 text-xs">Top winners of the week will be displayed here.</p>
-              </motion.div>
-            )}
-
-            {tab === 'me' && (
-              <motion.div key="me-tab" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mx-4 bg-[#0a4a2e]/60 border border-white/10 rounded-2xl p-4 mb-24">
-                <h3 className="text-white font-bold mb-3 text-sm uppercase tracking-wider">My Profile</h3>
-                <div className="space-y-2">
-                  <div className="flex justify-between bg-[#063320] rounded-xl px-3 py-2"><span className="text-white/60 text-sm">Name</span><span className="text-white text-sm font-bold">{wallet?.name || 'Player'}</span></div>
-                  <div className="flex justify-between bg-[#063320] rounded-xl px-3 py-2"><span className="text-white/60 text-sm">Telegram ID</span><span className="text-white text-sm font-mono">{tgId}</span></div>
-                  <div className="flex justify-between bg-[#063320] rounded-xl px-3 py-2"><span className="text-white/60 text-sm">Balance</span><span className="text-green-400 text-sm font-bold">{((wallet?.wallet !== undefined && wallet?.wallet !== null) ? Number(wallet.wallet).toFixed(2) : '0.00')} ETB</span></div>
+                <div className="w-24 h-24 bg-gradient-to-b from-gray-700 to-black rounded-full border-4 border-gray-500 flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.2)] z-10 mb-4">
+                  <span className="text-5xl font-black text-white">8</span>
                 </div>
                 
-                <div className="mt-4 bg-[#063320] border border-white/10 rounded-xl p-3 text-center">
-                   <p className="text-white/60 text-xs">To Deposit or Withdraw funds, please close this app and use the main Telegram Bot menu.</p>
+                <h1 className="text-4xl font-black tracking-tight text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)]">CHELA Bingo</h1>
+                <p className="text-green-400/80 text-sm font-medium tracking-widest uppercase mt-1 mb-8">100-Player Massive Multiplayer</p>
+
+                {/* The Big Play Button */}
+                <button className="w-full relative group">
+                  <div className="absolute -inset-1 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-2xl blur opacity-70 group-hover:opacity-100 transition duration-300"></div>
+                  <div className="relative w-full py-5 bg-gradient-to-b from-[#115e3b] to-[#0a4a2e] border border-green-400/50 rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-transform shadow-[inset_0_2px_10px_rgba(255,255,255,0.2)]">
+                    <span className="text-2xl">🎮</span>
+                    <span className="text-2xl font-black text-white tracking-wide shadow-black drop-shadow-md">Play Now</span>
+                  </div>
+                </button>
+
+                <div className="mt-6 text-center">
+                  <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 drop-shadow-sm uppercase tracking-wider">
+                    WIN UP TO 8000 ETB!
+                  </h2>
+                  <p className="text-white/50 text-xs mt-2">Servers are live. Join a room to start winning!</p>
                 </div>
-              </motion.div>
-            )}
-          </motion.div>
-        )}
+              </div>
+            </motion.div>
+          )}
 
-        {/* 🚀 UPGRADED ROOM SELECTION SCREEN */}
-        {screen === 'select' && (
-          <motion.div key="select" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }} transition={{ duration: 0.25 }} className="flex-1 flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 sticky top-safe z-10 bg-[#042014]">
-              <motion.button whileTap={{ scale: 0.95 }} onClick={() => useBingoStore.setState({ screen: 'lobby' })} className="flex items-center gap-1 text-white/60 text-sm">← Back</motion.button>
-              <span className="text-white font-bold text-sm">Choose Room</span>
-              <div className="w-8 h-8" />
-            </div>
+          {/* ================= LOGS TAB ================= */}
+          {activeTab === 'logs' && (
+            <motion.div key="logs" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="flex flex-col gap-3 pt-4">
+              <h2 className="text-xl font-black text-white mb-2">My Game History</h2>
+              {mockLogs.map((log, idx) => (
+                <div key={idx} className="bg-[#062416] border border-white/5 rounded-xl p-4 flex justify-between items-center">
+                  <div>
+                    <div className="text-sm font-bold text-white mb-1">{log.id}</div>
+                    <div className="text-xs text-white/40">{log.date}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-white/50 uppercase tracking-wider mb-1">Stake</div>
+                    <div className="text-sm font-black text-green-400">{log.stake} ETB</div>
+                  </div>
+                </div>
+              ))}
+            </motion.div>
+          )}
 
-            {error && <div className="mx-4 mb-3 bg-red-500/20 border border-red-500/40 rounded-xl px-3 py-2 text-red-300 text-sm">{error}</div>}
+          {/* ================= TOP TAB ================= */}
+          {activeTab === 'top' && (
+            <motion.div key="top" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="flex flex-col gap-2 pt-4">
+              <div className="flex justify-between items-end mb-4 px-1">
+                <h2 className="text-xl font-black text-white">Top High Rollers</h2>
+                <span className="text-xs text-yellow-400/80 font-medium">All Time</span>
+              </div>
+              
+              {/* Leaderboard Header */}
+              <div className="flex text-[10px] text-white/40 uppercase tracking-widest px-4 pb-2">
+                <div className="w-10">#</div>
+                <div className="flex-1">Player ID</div>
+                <div className="w-20 text-right">Played</div>
+                <div className="w-28 text-right">Winnings</div>
+              </div>
 
-            <div className="px-4 space-y-4 pb-24 overflow-y-auto max-h-[80vh]">
-              {STAKE_OPTIONS.map((opt, index) => {
-                const isThisLoading = loadingStakeId === opt.amount.toString();
-
+              {/* Leaderboard List */}
+              {mockTopPlayers.map((player, idx) => {
+                const isFirst = idx === 0;
+                const isSecond = idx === 1;
+                const isThird = idx === 2;
+                
                 return (
-                  <motion.button
-                    key={opt.amount}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.1, duration: 0.3 }}
-                    whileTap={{ scale: 0.96, boxShadow: "0px 0px 20px rgba(74,222,128,0.3)" }}
-                    disabled={loadingStakeId !== null}
-                    onClick={() => handleJoinStake(opt)}
-                    className="w-full bg-gradient-to-br from-[#0a4a2e] to-[#042b1a] border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-md overflow-hidden relative rounded-2xl p-5 text-left disabled:opacity-50 transition-all duration-200 hover:border-green-500/30"
-                  >
-                    <div className="relative z-10 flex items-center justify-between">
-                      <div>
-                        <p className="text-white font-black text-lg">{opt.label} Room</p>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          {/* Live Pulsing Dot */}
-                          <span className="flex h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
-                          <p className="text-white/60 text-xs font-medium">Max {opt.players} players</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-yellow-400 font-black text-[10px] uppercase tracking-widest mb-0.5">
-                          {isThisLoading ? '⌛' : 'UP TO'}
-                        </p>
-                        {!isThisLoading && (
-                          <p className="text-green-400 font-black text-lg">
-                            🏆 {opt.maxPrize} ETB
-                          </p>
-                        )}
-                      </div>
+                  <div key={idx} className={`
+                    flex items-center p-3 rounded-xl border
+                    ${isFirst ? 'bg-yellow-500/10 border-yellow-500/30 shadow-[0_0_15px_rgba(234,179,8,0.1)]' : 
+                      isSecond ? 'bg-gray-300/10 border-gray-300/20' : 
+                      isThird ? 'bg-orange-700/10 border-orange-700/20' : 
+                      'bg-[#062416] border-white/5'}
+                  `}>
+                    <div className="w-8 flex justify-center">
+                      {isFirst ? <span className="text-xl">🥇</span> : 
+                       isSecond ? <span className="text-xl">🥈</span> : 
+                       isThird ? <span className="text-xl">🥉</span> : 
+                       <span className="text-sm font-bold text-white/30">{idx + 1}</span>}
                     </div>
-                    {isThisLoading && <div className="absolute inset-0 bg-[#0a4a2e]/90 flex items-center justify-center backdrop-blur-sm z-20"><div className="w-6 h-6 border-2 border-green-400 border-t-transparent rounded-full animate-spin"></div></div>}
-                  </motion.button>
+                    <div className={`flex-1 font-bold text-sm ${isFirst ? 'text-yellow-400' : 'text-white/90'}`}>
+                      {player.id}
+                    </div>
+                    <div className="w-16 text-right text-xs font-medium text-white/60">
+                      {player.played}
+                    </div>
+                    <div className="w-28 text-right text-sm font-black text-green-400">
+                      {player.won}
+                    </div>
+                  </div>
                 );
               })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </motion.div>
+          )}
 
-      {/* BOTTOM NAVIGATION */}
-      <nav className="fixed bottom-0 left-0 right-0 z-20 bg-[#042014]/90 backdrop-blur-lg border-t border-white/10 flex items-center justify-around px-2 py-2 safe-area-bottom">
-        {NAV_TABS.map(item => {
-          const active = tab === item.key;
-          return (
-            <motion.button key={item.key} whileTap={{ scale: 0.9 }} onClick={() => { setTab(item.key); if (screen !== 'lobby') useBingoStore.setState({ screen: 'lobby' }); if (isTelegram) haptic.selection(); }} className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all ${active ? 'text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,0.8)] scale-110' : 'text-white/40 hover:text-white/60' }`}>
-              <span className="text-xl">{item.icon}</span>
-              <span className="text-[10px] font-medium">{item.label}</span>
-            </motion.button>
-          );
-        })}
+          {/* ================= PROFILE TAB ================= */}
+          {activeTab === 'profile' && (
+            <motion.div key="profile" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center h-full text-white/50 pt-20">
+              <span className="text-4xl mb-4">👤</span>
+              <p>Profile Settings Coming Soon</p>
+            </motion.div>
+          )}
+
+        </AnimatePresence>
+      </main>
+
+      {/* BOTTOM NAVIGATION BAR */}
+      <nav className="shrink-0 absolute bottom-0 w-full bg-[#03150c] border-t border-white/10 pb-safe pt-2 px-6 z-50">
+        <div className="flex justify-between items-center max-w-md mx-auto h-16">
+          <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'home' ? 'text-green-400' : 'text-white/40'}`}>
+            <span className={`text-2xl ${activeTab === 'home' ? 'scale-110 drop-shadow-[0_0_8px_rgba(34,197,94,0.8)]' : ''} transition-transform`}>🏠</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest">Home</span>
+          </button>
+          
+          <button onClick={() => setActiveTab('logs')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'logs' ? 'text-green-400' : 'text-white/40'}`}>
+            <span className={`text-2xl ${activeTab === 'logs' ? 'scale-110' : ''} transition-transform`}>📋</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest">Logs</span>
+          </button>
+          
+          <button onClick={() => setActiveTab('top')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'top' ? 'text-green-400' : 'text-white/40'}`}>
+            <span className={`text-2xl ${activeTab === 'top' ? 'scale-110 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]' : ''} transition-transform`}>🏆</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest">Top</span>
+          </button>
+          
+          <button onClick={() => setActiveTab('profile')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'profile' ? 'text-green-400' : 'text-white/40'}`}>
+            <span className={`text-2xl ${activeTab === 'profile' ? 'scale-110' : ''} transition-transform`}>👤</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest">Profile</span>
+          </button>
+        </div>
       </nav>
+      
     </div>
   );
 }
