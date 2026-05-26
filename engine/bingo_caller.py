@@ -1,9 +1,10 @@
 """
-Bingo Caller — Multiplayer Batching Engine (High-Performance Clock Edition)
+Bingo Caller — Multiplayer Batching Engine (Bulletproof Edition)
 ==============================================================
 - MIN_PLAYERS: 2
-- COUNTDOWN_SECONDS: 30 (Strictly measured internally by the engine)
-- DOOR_LOCK_SECONDS: 5 (Brief pause before numbers draw)
+- COUNTDOWN_SECONDS: 30
+- DOOR_LOCK_SECONDS: 5
+- Failsafe execution loops to prevent hanging
 """
 
 import os
@@ -35,7 +36,7 @@ DRAW_INTERVAL         = 3
 TICK_INTERVAL         = 1   
 MAX_CONCURRENT_GAMES  = 3
 
-# 🚀 THE FIX: Engine-level memory for perfect, database-independent timers
+# Engine-level memory
 _last_draw_time: dict[str, float] = {}
 _boarding_start_times: dict[str, float] = {}
 
@@ -50,13 +51,18 @@ def get_running_games_count(entry_fee: float) -> int:
     try:
         res = sb.table("bingo_rooms").select("id", count="exact").in_("status", ["countdown", "active"]).eq("entry_fee", entry_fee).execute()
         return res.count or 0
-    except Exception: return 0
+    except Exception as e:
+        log(f"⚠️ Error counting games: {e}")
+        return 0
 
 def get_player_count(room_id: str) -> int:
     try:
-        res = sb.table("bingo_cards").select("id", count="exact").eq("room_id", room_id).not_("card_index", "is", "null").execute()
+        # 🚀 THE FIX: We check for status 'ready' to avoid the .not_() crash!
+        res = sb.table("bingo_cards").select("id", count="exact").eq("room_id", room_id).eq("status", "ready").execute()
         return res.count or 0
-    except Exception: return 0
+    except Exception as e: 
+        log(f"⚠️ Error counting players for {room_id[:8]}: {e}")
+        return 0
 
 # ══════════════════════════════════════════════════════════════
 # ZOMBIE CLEANUP
@@ -69,10 +75,11 @@ def cleanup_zombie_rooms():
         for z in zombies:
             sb.table("bingo_rooms").update({"status": "finished", "finished_at": now_utc().isoformat()}).eq("id", z["id"]).execute()
             log(f"💀 Killed zombie room: {z['id'][:8]}")
-    except Exception: pass
+    except Exception as e: 
+        log(f"⚠️ Zombie cleanup failed: {e}")
 
 # ══════════════════════════════════════════════════════════════
-# PHASE 1: WAITING → COUNTDOWN (The Engine Clock Logic)
+# PHASE 1: WAITING → COUNTDOWN
 # ══════════════════════════════════════════════════════════════
 def process_waiting_rooms():
     try:
@@ -91,7 +98,6 @@ def process_waiting_rooms():
 
         # 1. Not enough players
         if player_count < MIN_PLAYERS:
-            # If players leave and drop below the minimum, reset the clock
             if room_id in _boarding_start_times:
                 log(f"📉 Room {room_id[:8]} fell below minimum players. Clock paused.")
                 _boarding_start_times.pop(room_id, None)
@@ -99,15 +105,15 @@ def process_waiting_rooms():
 
         # 2. Server is Full
         if running_count >= MAX_CONCURRENT_GAMES:
-            log(f"🛑 QUEUED: Room {room_id[:8]} has {player_count} players but server is full. Waiting...")
+            if int(time.time()) % 10 == 0:  # Only log queue every 10 seconds to avoid spam
+                log(f"🛑 QUEUED: Room {room_id[:8]} has {player_count} players but server is full.")
             continue
 
-        # 3. WE HAVE 2+ PLAYERS! Start the engine clock if it hasn't started yet.
+        # 3. WE HAVE 2+ PLAYERS! Start the engine clock
         if room_id not in _boarding_start_times:
             _boarding_start_times[room_id] = time.time()
             log(f"⏰ Room {room_id[:8]} hit minimum players! 30-Second boarding phase started.")
 
-        # Calculate exact time passed via the engine's processor
         elapsed = time.time() - _boarding_start_times[room_id]
         
         if elapsed >= COUNTDOWN_SECONDS:
@@ -119,11 +125,9 @@ def process_waiting_rooms():
                 }).eq("id", room_id).execute()
                 
                 log(f"🟡 Room {room_id[:8]} → DOORS LOCKED ({player_count} players).")
-                
-                # Cleanup our memory timer
                 _boarding_start_times.pop(room_id, None)
 
-                # Immediately spawn the next empty lobby for new players
+                # Spawn new lobby
                 new_room = {
                     "status": "waiting",
                     "entry_fee": entry_fee,
@@ -132,25 +136,26 @@ def process_waiting_rooms():
                 sb.table("bingo_rooms").insert(new_room).execute()
 
             except Exception as e:
-                log(f"[ERROR] Locking doors: {e}")
+                log(f"❌ [ERROR] Locking doors for {room_id[:8]}: {e}")
         else:
-            # Still ticking down...
             remaining = int(COUNTDOWN_SECONDS - elapsed)
-            if remaining % 5 == 0 and remaining > 0:  # Print every 5 seconds
-                log(f"⏳ Room {room_id[:8]} boarding phase ends in {remaining}s... ({player_count}/100 players joined)")
+            if remaining % 5 == 0 and remaining > 0: 
+                # Use a fast print to avoid IO blocking
+                print(f"[ENGINE {now_utc().strftime('%H:%M:%S')}] ⏳ Room {room_id[:8]} boarding phase ends in {remaining}s... ({player_count}/100 players joined)")
 
 # ══════════════════════════════════════════════════════════════
-# PHASE 2: COUNTDOWN → ACTIVE (Door Lock Buffer)
+# PHASE 2: COUNTDOWN → ACTIVE
 # ══════════════════════════════════════════════════════════════
 def process_countdown_rooms():
     try:
         result = sb.table("bingo_rooms").select("*").eq("status", "countdown").execute()
         rooms = result.data or []
-    except Exception: return
+    except Exception as e: 
+        log(f"⚠️ Error fetching countdown rooms: {e}")
+        return
 
     for room in rooms:
         room_id = room["id"]
-        
         cd_started = room.get("countdown_started_at")
         if not cd_started: continue
 
@@ -161,9 +166,7 @@ def process_countdown_rooms():
 
         if (now_utc() - started).total_seconds() >= DOOR_LOCK_SECONDS:
             try:
-                # Shuffle the hat of 75 numbers right before the game begins!
                 shuffled_hat = random.sample(range(1, 76), 75)
-                
                 sb.table("bingo_rooms").update({
                     "status": "active",
                     "started_at": now_utc().isoformat(),
@@ -183,7 +186,9 @@ def process_active_rooms():
     try:
         result = sb.table("bingo_rooms").select("id, draw_sequence, drawn_numbers").eq("status", "active").execute()
         rooms = result.data or []
-    except Exception: return
+    except Exception as e: 
+        log(f"⚠️ Error fetching active rooms: {e}")
+        return
 
     for room in rooms:
         room_id = room["id"]
@@ -218,7 +223,8 @@ def process_active_rooms():
             _last_draw_time[room_id] = time.time()
             col = "BINGO"[min((next_number - 1) // 15, 4)]
             log(f"🎱 Room {room_id[:8]} drew {col}-{next_number} ({next_index + 1}/75)")
-        except Exception: pass
+        except Exception as e: 
+            log(f"❌ ERROR drawing number for {room_id[:8]}: {e}")
 
 # ══════════════════════════════════════════════════════════════
 # BOOTSTRAP LOBBY
@@ -228,11 +234,12 @@ def ensure_initial_rooms():
         res = sb.table("bingo_rooms").select("id").eq("status", "waiting").execute()
         if not res.data:
             sb.table("bingo_rooms").insert({"status": "waiting", "entry_fee": 10}).execute()
-    except Exception: pass
+    except Exception as e: 
+        log(f"⚠️ Error ensuring initial rooms: {e}")
 
 def main():
     log("=" * 50)
-    log("🎰 CHELA Bingo Engine Online (High-Performance Clock Edition)")
+    log("🎰 CHELA Bingo Engine Online (Bulletproof Edition)")
     log("=" * 50)
     
     cleanup_zombie_rooms()
@@ -244,7 +251,10 @@ def main():
             process_countdown_rooms()
             process_active_rooms()
         except Exception as e:
-            log(f"[FATAL] Main loop error: {e}")
+            # 🚀 THE WATCHDOG: Prevents the script from dying if a silent error occurs
+            log(f"[FATAL WATCHDOG] Main loop error caught: {e}")
+        
+        # Absolute sleep to prevent CPU spiking
         time.sleep(TICK_INTERVAL)
 
 if __name__ == "__main__":

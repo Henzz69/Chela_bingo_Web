@@ -185,6 +185,7 @@ export const useBingoStore = create<BingoState>((set, get) => ({
           status: 'ready'
         },
         screen: 'game',
+        gameStatus: currentRoom.status, // 🚀 FIX: Instantly sync status to wake up UI!
         loadingRooms: false,
         joiningSessionId: null,
         winResult: null 
@@ -292,7 +293,6 @@ export const useBingoStore = create<BingoState>((set, get) => ({
     if (channel) supabase.removeChannel(channel);
     if (cardsChannel) supabase.removeChannel(cardsChannel);
     
-    // 🚀 AGGRESSIVE STATE WIPE
     set({
       screen: 'lobby', currentRoom: null, mySession: null, drawnNumbers: [],
       daubed: new Set([12]), winResult: null, gameStatus: 'idle',
@@ -313,9 +313,7 @@ export const useBingoStore = create<BingoState>((set, get) => ({
         const room = data.room as BingoRoom;
         const card = data.card as GameSession;
 
-        // 🚀 THE GHOST BUSTER FIX: If the room is finished, reject the recovery entirely
         if (room.status === 'finished') {
-          console.warn("Attempted to recover a finished room. Ghost busted. Routing to lobby.");
           set({ isRecovering: false, screen: 'lobby' });
           return;
         }
