@@ -5,14 +5,9 @@ import time
 
 print("🚀 Booting CHELA Bingo Infrastructure...")
 
-# Force the script to run from the 'betting-site' directory so it can see both folders
-if os.path.basename(os.getcwd()) == "backend":
-    os.chdir("..")
-
-print(f"📂 Running from Directory: {os.getcwd()}")
-
+# Because we moved the engine inside the backend folder, the paths are easy!
 engine_path = "engine/bingo_caller.py"
-bot_path = "backend/bot.py"
+bot_path = "bot.py"
 
 # 1. Start the Engine
 if not os.path.exists(engine_path):
