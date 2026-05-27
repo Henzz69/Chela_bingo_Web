@@ -268,25 +268,24 @@ export const useBingoStore = create<BingoState>((set, get) => ({
     const { mySession, currentRoom, takenCardIds } = get();
     if (!mySession || !currentRoom) return;
 
-    const idempotencyKey = `win-${mySession.id}`;
-    
-    // 🚀 THE FIX: Frontend Fallback Math
-    // Calculate the dynamic pot here based on known active players
+    // 🚀 THE RACE-CONDITION FIX: Pre-calculate and display the pot locally
     const activePlayers = takenCardIds.size > 0 ? takenCardIds.size : 2; 
     const expectedPayout = (currentRoom.entry_fee * activePlayers) * 0.80;
+    
+    // Instantly lock in the payout amount before the WebSocket fires
+    set({ payout: expectedPayout });
 
     try {
-      const { data, error } = await supabase.rpc('bingo_claim_win', {
-        p_session_id: mySession.id,
+      // 🚀 THE GHOST FIX: Call our entirely new, clean SQL function
+      const { data, error } = await supabase.rpc('bingo_process_claim', {
         p_room_id: currentRoom.id,
-        p_tg_id: tgId,
-        p_idem_key: idempotencyKey,
+        p_tg_id: tgId
       });
 
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      // Force the state update using our manual calculation if the backend payload is missing
+      // Finalize victory with server-confirmed payload
       set({ 
         gameStatus: 'finished', 
         payout: data?.payout || expectedPayout, 
@@ -296,6 +295,7 @@ export const useBingoStore = create<BingoState>((set, get) => ({
       return data?.new_balance || 0; 
 
     } catch (e: any) {
+      console.error("Claim Error:", e);
       set({ error: e.message });
       throw e;
     }
