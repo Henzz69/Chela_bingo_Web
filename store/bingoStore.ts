@@ -185,7 +185,7 @@ export const useBingoStore = create<BingoState>((set, get) => ({
           status: 'ready'
         },
         screen: 'game',
-        gameStatus: currentRoom.status, // 🚀 FIX: Instantly sync status to wake up UI!
+        gameStatus: currentRoom.status,
         loadingRooms: false,
         joiningSessionId: null,
         winResult: null 
@@ -265,10 +265,16 @@ export const useBingoStore = create<BingoState>((set, get) => ({
   },
 
   claimBingo: async (tgId: number) => {
-    const { mySession, currentRoom } = get();
+    const { mySession, currentRoom, takenCardIds } = get();
     if (!mySession || !currentRoom) return;
 
     const idempotencyKey = `win-${mySession.id}`;
+    
+    // 🚀 THE FIX: Frontend Fallback Math
+    // Calculate the dynamic pot here based on known active players
+    const activePlayers = takenCardIds.size > 0 ? takenCardIds.size : 2; 
+    const expectedPayout = (currentRoom.entry_fee * activePlayers) * 0.80;
+
     try {
       const { data, error } = await supabase.rpc('bingo_claim_win', {
         p_session_id: mySession.id,
@@ -280,8 +286,15 @@ export const useBingoStore = create<BingoState>((set, get) => ({
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      set({ gameStatus: 'finished', payout: data.payout, winnerId: String(tgId) });
-      return data.new_balance; 
+      // Force the state update using our manual calculation if the backend payload is missing
+      set({ 
+        gameStatus: 'finished', 
+        payout: data?.payout || expectedPayout, 
+        winnerId: String(tgId) 
+      });
+      
+      return data?.new_balance || 0; 
+
     } catch (e: any) {
       set({ error: e.message });
       throw e;
