@@ -206,6 +206,14 @@ export const useBingoStore = create<BingoState>((set, get) => ({
       .channel(`bingo-room-${roomId}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'bingo_rooms', filter: `id=eq.${roomId}`}, 
         (payload) => {
+          const { gameStatus } = get();
+
+          // 🛡️ THE IMPENETRABLE LATCH:
+          // If the game is locally finished, DROP the payload. Do not let Python drag us back to 'active'.
+          if (gameStatus === 'finished') {
+            return;
+          }
+
           const room = payload.new as BingoRoom; 
           const drawn: number[] = room.drawn_numbers ?? [];
           const { mySession, daubed } = get();
