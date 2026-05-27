@@ -208,17 +208,21 @@ export const useBingoStore = create<BingoState>((set, get) => ({
         (payload) => {
           const room = payload.new as BingoRoom; 
           const drawn: number[] = room.drawn_numbers ?? [];
-          const { mySession, daubed } = get();
+          const { mySession, daubed, gameStatus } = get();
 
           let currentWinResult = get().winResult;
           if (mySession && mySession.grid) {
             currentWinResult = checkWin(mySession.grid, daubed, new Set(drawn));
           }
 
+          // 🚀 RACE CONDITION FIX: State Lock
+          // If our frontend already registered a win, outright reject any delayed webhooks trying to pull us back to 'active'
+          const guardedStatus = (gameStatus === 'finished' || room.status === 'finished') ? 'finished' : room.status;
+
           set({
             currentRoom: room,
             drawnNumbers: drawn,
-            gameStatus: room.status,
+            gameStatus: guardedStatus,
             winnerId: room.winner_tg_id ? String(room.winner_tg_id) : room.winner_id,
             winResult: currentWinResult
           });
@@ -268,35 +272,46 @@ export const useBingoStore = create<BingoState>((set, get) => ({
     const { mySession, currentRoom, takenCardIds } = get();
     if (!mySession || !currentRoom) return;
 
-    // 🚀 THE RACE-CONDITION FIX: Pre-calculate and display the pot locally
+    const idempotencyKey = `win-${mySession.id}`;
+    
+    // 1. Calculate dynamic pot locally
     const activePlayers = takenCardIds.size > 0 ? takenCardIds.size : 2; 
     const expectedPayout = (currentRoom.entry_fee * activePlayers) * 0.80;
     
-    // Instantly lock in the payout amount before the WebSocket fires
-    set({ payout: expectedPayout });
+    // 2. 🚀 OPTIMISTIC LOCK: Instantly claim the UI state to prevent flickering
+    set({ 
+      gameStatus: 'finished', 
+      payout: expectedPayout,
+      winnerId: String(tgId),
+      error: null 
+    });
 
     try {
-      // 🚀 THE GHOST FIX: Call our entirely new, clean SQL function
-      const { data, error } = await supabase.rpc('bingo_process_claim', {
+      // 3. Call the nuked-and-rebuilt original function
+      const { data, error } = await supabase.rpc('bingo_claim_win', {
+        p_session_id: mySession.id,
         p_room_id: currentRoom.id,
-        p_tg_id: tgId
+        p_tg_id: tgId,
+        p_idem_key: idempotencyKey,
       });
 
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      // Finalize victory with server-confirmed payload
-      set({ 
-        gameStatus: 'finished', 
-        payout: data?.payout || expectedPayout, 
-        winnerId: String(tgId) 
-      });
+      // Confirm payout with verified server data
+      if (data?.payout) set({ payout: data.payout });
       
       return data?.new_balance || 0; 
 
     } catch (e: any) {
+      // 🚀 CRITICAL REVERT: If the server rejects the claim (or network fails), pull them out of the victory screen safely
       console.error("Claim Error:", e);
-      set({ error: e.message });
+      set({ 
+        error: e.message || "Server rejected claim.",
+        gameStatus: 'active',
+        payout: null,
+        winnerId: null
+      });
       throw e;
     }
   },
