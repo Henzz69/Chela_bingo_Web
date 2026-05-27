@@ -185,7 +185,7 @@ export const useBingoStore = create<BingoState>((set, get) => ({
           status: 'ready'
         },
         screen: 'game',
-        gameStatus: currentRoom.status, 
+        gameStatus: currentRoom.status,
         loadingRooms: false,
         joiningSessionId: null,
         winResult: null 
