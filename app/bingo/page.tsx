@@ -24,7 +24,7 @@ const STAKE_OPTIONS = [
 
 export default function BingoPage() {
   const { tgId, isTelegram, haptic } = useTelegram();
-  const { screen, fetchRooms, isRecovering, recoverSession } = useBingoStore();
+  const { screen, fetchRooms, isRecovering, recoverSession, loadingRooms } = useBingoStore();
 
   const [tab, setTab] = useState<'home' | 'logs' | 'top' | 'profile'>('home');
   const [loadingStakeId, setLoadingStakeId] = useState<string | null>(null);
@@ -167,8 +167,42 @@ export default function BingoPage() {
         <div className="absolute bottom-[20%] right-[-20%] w-96 h-96 bg-yellow-500/10 rounded-full blur-3xl"></div>
       </div>
 
+      {/* TOP NAVIGATION BAR (New Refresh & Logo Layout) */}
+      <div className="relative flex items-center justify-between px-4 pt-4 pb-2 z-10">
+        
+        {/* Quick In-App Refresh Button */}
+        <motion.button
+          whileTap={{ scale: 0.85 }}
+          onClick={() => {
+            if (isTelegram) haptic.selection();
+            fetchRooms(); 
+            fetchWallet(tgId!); 
+          }}
+          className="w-10 h-10 flex items-center justify-center rounded-full bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/15 transition-all shadow-sm z-10"
+        >
+          <motion.div
+            animate={{ rotate: loadingRooms || walletLoading ? 360 : 0 }}
+            transition={{ repeat: loadingRooms || walletLoading ? Infinity : 0, duration: 1, ease: "linear" }}
+          >
+            {/* Elegant minimal SVG refresh icon */}
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </motion.div>
+        </motion.button>
+
+        {/* Centered App Logo */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5">
+          <span className="text-xl">🎱</span>
+          <span className="text-white font-extrabold text-base tracking-widest uppercase">CHELA</span>
+        </div>
+
+        {/* Invisible spacer to maintain perfect flex centering */}
+        <div className="w-10 h-10 z-10" />
+      </div>
+
       {/* HEADER: Balance Tracker */}
-      <header className="shrink-0 p-4 z-10">
+      <header className="shrink-0 px-4 pb-4 z-10">
         <div className="bg-[#062416] border border-green-500/30 rounded-2xl p-4 flex justify-between items-center shadow-[0_4px_20px_rgba(34,197,94,0.15)]">
           <span className="text-white/60 font-medium text-sm">Balance</span>
           <span className="text-green-400 font-black text-xl tracking-tight">
@@ -213,8 +247,7 @@ export default function BingoPage() {
                   <h1 className="text-4xl font-black tracking-tight text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)] text-center">CHELA Bingo</h1>
                   <p className="text-green-400/80 text-sm font-medium tracking-widest uppercase mt-1 mb-8 text-center">100-Player Massive Multiplayer</p>
 
-                  {/* 🔥 THE MAGIC PLAY BUTTON 🔥 
-                      This triggers your Zustand state, just like your old code! */}
+                  {/* 🔥 THE MAGIC PLAY BUTTON 🔥 */}
                   <button 
                     onClick={() => useBingoStore.setState({ screen: 'select' })} 
                     className="w-full relative group transition-transform active:scale-95"
@@ -295,7 +328,6 @@ export default function BingoPage() {
           )}
 
           {/* ================= ZUSTAND SCREEN: ROOM SELECTION ================= */}
-          {/* Exactly from your code, keeping your design and STAKE_OPTIONS layout */}
           {screen === 'select' && (
             <motion.div key="select" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }} className="flex-1 flex flex-col">
               <div className="flex items-center justify-between py-3 sticky top-safe z-10">
