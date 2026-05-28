@@ -21,6 +21,44 @@ interface Props {
   tgId: number;
 }
 
+// 🚀 THE SPEED FIX: Isolated Timer Component
+// This prevents the 1-second ticks from re-rendering the heavy 100-cell bingo grid
+function IsolatedCountdown({ isReadyToStart, gameStatus }: { isReadyToStart: boolean, gameStatus: string }) {
+  const [countdownStart, setCountdownStart] = useState<number>(30);
+
+  useEffect(() => {
+    if (gameStatus === 'waiting' && isReadyToStart) {
+      const interval = setInterval(() => {
+        setCountdownStart((prev) => (prev > 0 ? prev - 1 : 0));
+      }, 1000);
+      return () => clearInterval(interval);
+    } else if (gameStatus !== 'waiting') {
+      setCountdownStart(30);
+    }
+  }, [gameStatus, isReadyToStart]);
+
+  if (gameStatus === 'waiting' && !isReadyToStart) {
+    return (
+      <motion.div key="wait1" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-yellow-400">
+        <div className="text-xl mb-1 animate-pulse">⏳</div>
+        <div className="text-[10px] font-bold uppercase tracking-widest leading-tight">Waiting</div>
+      </motion.div>
+    );
+  }
+
+  if (gameStatus === 'waiting' && isReadyToStart) {
+    return (
+      <motion.div key="wait2" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="text-green-400">
+        <div className="text-[10px] uppercase font-bold text-green-500/70 mb-0.5">Count Down</div>
+        <div className="text-2xl font-black">{countdownStart}s</div>
+      </motion.div>
+    );
+  }
+
+  return null;
+}
+
+
 export default function BingoGameBoard({ tgId }: Props) {
   const {
     currentRoom,
@@ -39,42 +77,24 @@ export default function BingoGameBoard({ tgId }: Props) {
     clearError,
   } = useBingoStore();
 
-  const [countdownStart, setCountdownStart] = useState<number>(30);
   const [isClaiming, setIsClaiming] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
-  
-  // New state for the "False Bingo" popup
   const [showFalseAlarm, setShowFalseAlarm] = useState(false);
   
   const playerCount = takenCardIds.size;
   const isReadyToStart = playerCount >= 2;
-
-  useEffect(() => {
-    if (gameStatus === 'waiting' && isReadyToStart) {
-      const interval = setInterval(() => {
-        setCountdownStart((prev) => (prev > 0 ? prev - 1 : 0));
-      }, 1000);
-      return () => clearInterval(interval);
-    } else if (gameStatus !== 'waiting') {
-      setCountdownStart(30);
-    }
-  }, [gameStatus, isReadyToStart]);
-
   const lastDrawn = drawnNumbers.length > 0 ? drawnNumbers[drawnNumbers.length - 1] : null;
 
   const handleClaimWin = async (e?: React.SyntheticEvent) => {
     if (e) e.preventDefault();
     if (isClaiming) return; 
 
-    // If they click BINGO but haven't actually won yet
     if (!winResult?.won) {
       setShowFalseAlarm(true);
-      // Auto-hide the popup after 3 seconds so it doesn't interrupt gameplay for long
       setTimeout(() => setShowFalseAlarm(false), 3000);
       return;
     }
     
-    // If they DO have a win, proceed to claim
     setIsClaiming(true);
     try {
       await claimBingo(tgId);
@@ -115,7 +135,6 @@ export default function BingoGameBoard({ tgId }: Props) {
               <div className="text-[11px] font-black text-green-400 leading-tight">{stat.value}</div>
             </div>
           ))}
-          {/* Sound Toggle */}
           <button 
             onClick={() => setSoundEnabled(!soundEnabled)}
             className="shrink-0 snap-start bg-[#063320] border border-white/5 rounded px-3 py-1 flex flex-col items-center justify-center active:scale-95 transition-transform"
@@ -129,7 +148,7 @@ export default function BingoGameBoard({ tgId }: Props) {
       {/* ERROR BANNER */}
       <AnimatePresence>
         {error && (
-          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="shrink-0 fixed top-16 left-2 right-2 z-50 bg-red-500/90 border border-red-500 text-white px-3 py-2 rounded-lg flex gap-2 items-center shadow-2xl">
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="shrink-0 fixed top-16 left-2 right-2 z-50 bg-red-500/90 border border-red-50 text-white px-3 py-2 rounded-lg flex gap-2 items-center shadow-2xl">
             <span className="font-bold text-xs flex-1">{error}</span>
             <button onClick={clearError} className="text-white/60 hover:text-white text-lg leading-none">×</button>
           </motion.div>
@@ -161,7 +180,7 @@ export default function BingoGameBoard({ tgId }: Props) {
       {/* MAIN PLAY AREA */}
       <main className="flex-1 min-h-0 flex gap-2 p-2">
         
-        {/* LEFT COLUMN: MASTER BOARD (Shrunk to 38% to give the player card more room) */}
+        {/* LEFT COLUMN: MASTER BOARD */}
         <div className="w-[38%] bg-[#0a4a2e] border border-white/10 rounded-xl flex flex-col overflow-hidden p-1">
           <div className="flex w-full mb-1 shrink-0">
             {COLUMNS.map((col, idx) => {
@@ -192,25 +211,19 @@ export default function BingoGameBoard({ tgId }: Props) {
           </div>
         </div>
 
-        {/* RIGHT COLUMN: STATUS & JUMBO PLAYER CARD (Expanded to 62%) */}
+        {/* RIGHT COLUMN: STATUS & JUMBO PLAYER CARD */}
         <div className="w-[62%] flex flex-col gap-2">
           
           {/* Top Status & HUGE Current Call Area */}
           <div className="flex gap-2 h-24 shrink-0">
             <div className="flex-1 bg-[#0a4a2e] border border-white/10 rounded-xl flex flex-col justify-center items-center text-center p-2">
               <AnimatePresence mode="wait">
-                {gameStatus === 'waiting' && playerCount < 2 && (
-                  <motion.div key="wait1" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-yellow-400">
-                    <div className="text-xl mb-1 animate-pulse">⏳</div>
-                    <div className="text-[10px] font-bold uppercase tracking-widest leading-tight">Waiting</div>
-                  </motion.div>
+                
+                {/* 🚀 THE SPEED FIX: We pass the status to the isolated timer */}
+                {gameStatus === 'waiting' && (
+                   <IsolatedCountdown isReadyToStart={isReadyToStart} gameStatus={gameStatus} />
                 )}
-                {gameStatus === 'waiting' && playerCount >= 2 && (
-                  <motion.div key="wait2" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="text-green-400">
-                    <div className="text-[10px] uppercase font-bold text-green-500/70 mb-0.5">Count Down</div>
-                    <div className="text-2xl font-black">{countdownStart}s</div>
-                  </motion.div>
-                )}
+                
                 {gameStatus === 'countdown' && (
                   <motion.div key="count" initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ opacity: 0 }} className="text-orange-400">
                     <div className="text-xl mb-1 animate-bounce">🚀</div>
@@ -222,7 +235,6 @@ export default function BingoGameBoard({ tgId }: Props) {
                     <div className="absolute inset-0 bg-green-500/10 animate-pulse rounded" />
                     <div className="text-[10px] font-bold uppercase tracking-widest mb-1 text-white/50">Current Call</div>
                     
-                    {/* The NEW Jumbo Ball */}
                     <AnimatePresence mode="wait">
                       {lastDrawn ? (
                         <motion.div key={lastDrawn} initial={{ scale: 0, rotate: -180 }} animate={{ scale: 1, rotate: 0 }} exit={{ scale: 0 }} 
@@ -296,7 +308,6 @@ export default function BingoGameBoard({ tgId }: Props) {
 
       {/* BOTTOM ACTION BUTTONS */}
       <footer className="shrink-0 px-2 pb-2 flex flex-col gap-2">
-        {/* The Claim Button (Now ALWAYS glowing and clickable) */}
         <button 
           onPointerDown={handleClaimWin}
           onClick={handleClaimWin} 
@@ -310,7 +321,6 @@ export default function BingoGameBoard({ tgId }: Props) {
           {isClaiming ? 'Claiming...' : 'BINGO!'}
         </button>
 
-        {/* Refresh and Leave buttons */}
         <div className="flex gap-2">
           <button onClick={handleRefresh} className="flex-1 py-2.5 bg-[#063320] hover:bg-[#0a4a2e] text-white/80 hover:text-white rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-1 border border-white/10 active:scale-95">
             🔄 Refresh

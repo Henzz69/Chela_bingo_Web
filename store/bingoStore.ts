@@ -3,6 +3,9 @@ import { supabase } from '@/lib/supabaseClient';
 import { generateDeterministicCard, checkWin } from '@/lib/bingoCards';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
+// 🛡️ THE NETWORK MUZZLE: Global timeout memory for debouncing cell taps
+let daubSyncTimeout: NodeJS.Timeout | null = null;
+
 export interface BingoRoom {
   id: string;
   entry_fee: number;
@@ -208,9 +211,7 @@ export const useBingoStore = create<BingoState>((set, get) => ({
         (payload) => {
           const { gameStatus } = get();
 
-          // 🛡️ THE FRONTEND LATCH: 
-          // If the game is already locally finished, completely drop any delayed updates from the Python backend 
-          // trying to tell us the game is still 'active'. This prevents the Victory UI from disappearing.
+          // 🛡️ THE FRONTEND LATCH
           if (gameStatus === 'finished') {
             return;
           }
@@ -261,39 +262,77 @@ export const useBingoStore = create<BingoState>((set, get) => ({
 
     const newWinResult = checkWin(mySession.grid, newDaubed, new Set(drawnNumbers));
 
+    // 🚀 1. INSTANT LOCAL UPDATE: The UI reacts with zero latency
     set({ daubed: newDaubed, winResult: newWinResult });
 
-    try {
-      await supabase.rpc('bingo_daub_cell', {
-        p_session_id: mySession.id,
-        p_daubed: Array.from(newDaubed)
-      });
-    } catch (error) {
-      console.error("Failed to save daub to secure server:", error);
+    // 🛡️ 2. THE NETWORK MUZZLE: Prevent database spam
+    if (daubSyncTimeout) {
+      clearTimeout(daubSyncTimeout);
     }
+    
+    // Wait 1 second after the user STOPS tapping before syncing to Supabase
+    daubSyncTimeout = setTimeout(async () => {
+      try {
+        await supabase.rpc('bingo_daub_cell', {
+          p_session_id: mySession.id,
+          p_daubed: Array.from(newDaubed)
+        });
+      } catch (error) {
+        console.error("Failed to sync daub to secure server:", error);
+      }
+    }, 1000);
   },
 
   claimBingo: async (tgId: number) => {
-    const { mySession, currentRoom } = get();
+    const { mySession, currentRoom, takenCardIds } = get();
     if (!mySession || !currentRoom) return;
+    
+    const activePlayers = takenCardIds.size > 0 ? takenCardIds.size : 2; 
+    const expectedPayout = (currentRoom.entry_fee * activePlayers) * 0.80;
+    
+    // Optimistic Lock
+    set({ 
+      gameStatus: 'finished', 
+      payout: expectedPayout,
+      winnerId: String(tgId),
+      error: null 
+    });
 
-    const idempotencyKey = `win-${mySession.id}`;
     try {
       const { data, error } = await supabase.rpc('bingo_claim_win', {
         p_session_id: mySession.id,
         p_room_id: currentRoom.id,
         p_tg_id: tgId,
-        p_idem_key: idempotencyKey,
+        p_idem_key: `win-${mySession.id}` 
       });
 
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      // Successfully sets the state to 'finished', locking the UI in place.
-      set({ gameStatus: 'finished', payout: data.payout, winnerId: String(tgId) });
-      return data.new_balance; 
+      if (data?.payout) set({ payout: data.payout });
+      
+      return data?.new_balance || 0; 
+
     } catch (e: any) {
-      set({ error: e.message });
+      console.error("Claim Error:", e);
+      const errorMessage = e.message || "";
+
+      // 🚀 RACE CONDITION FIX: Graceful Defeat
+      if (errorMessage.includes('already been won')) {
+         set({ 
+           payout: null,
+           winnerId: null,
+           error: null 
+         });
+         return;
+      }
+
+      set({ 
+        error: errorMessage || "Server rejected claim.",
+        gameStatus: 'active',
+        payout: null,
+        winnerId: null
+      });
       throw e;
     }
   },
