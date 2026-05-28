@@ -3,6 +3,9 @@ import { supabase } from '@/lib/supabaseClient';
 import { generateDeterministicCard, checkWin } from '@/lib/bingoCards';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
+// 🛡️ THE NETWORK MUZZLE: Global timeout memory for debouncing cell taps
+let daubSyncTimeout: NodeJS.Timeout | null = null;
+
 export interface BingoRoom {
   id: string;
   entry_fee: number;
@@ -26,6 +29,10 @@ export interface GameSession {
 }
 
 interface BingoState {
+  // ☀️ THEME STATE
+  theme: 'dark' | 'light';
+  toggleTheme: () => void;
+
   screen: 'lobby' | 'select' | 'card-select' | 'game'; 
   rooms: BingoRoom[];
   loadingRooms: boolean;
@@ -64,6 +71,10 @@ interface BingoState {
 }
 
 export const useBingoStore = create<BingoState>((set, get) => ({
+  // ☀️ THEME INITIALIZATION
+  theme: 'dark',
+  toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
+
   screen: 'lobby',
   rooms: [],
   loadingRooms: false,
@@ -206,6 +217,13 @@ export const useBingoStore = create<BingoState>((set, get) => ({
       .channel(`bingo-room-${roomId}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'bingo_rooms', filter: `id=eq.${roomId}`}, 
         (payload) => {
+          const { gameStatus } = get();
+
+          // 🛡️ THE FRONTEND LATCH
+          if (gameStatus === 'finished') {
+            return;
+          }
+
           const room = payload.new as BingoRoom; 
           const drawn: number[] = room.drawn_numbers ?? [];
           const { mySession, daubed } = get();
@@ -252,51 +270,76 @@ export const useBingoStore = create<BingoState>((set, get) => ({
 
     const newWinResult = checkWin(mySession.grid, newDaubed, new Set(drawnNumbers));
 
+    // 🚀 1. INSTANT LOCAL UPDATE
     set({ daubed: newDaubed, winResult: newWinResult });
 
-    try {
-      await supabase.rpc('bingo_daub_cell', {
-        p_session_id: mySession.id,
-        p_daubed: Array.from(newDaubed)
-      });
-    } catch (error) {
-      console.error("Failed to save daub to secure server:", error);
+    // 🛡️ 2. THE NETWORK MUZZLE
+    if (daubSyncTimeout) {
+      clearTimeout(daubSyncTimeout);
     }
+    
+    daubSyncTimeout = setTimeout(async () => {
+      try {
+        await supabase.rpc('bingo_daub_cell', {
+          p_session_id: mySession.id,
+          p_daubed: Array.from(newDaubed)
+        });
+      } catch (error) {
+        console.error("Failed to sync daub to secure server:", error);
+      }
+    }, 1000);
   },
 
   claimBingo: async (tgId: number) => {
     const { mySession, currentRoom, takenCardIds } = get();
     if (!mySession || !currentRoom) return;
-
-    // 🚀 THE RACE-CONDITION FIX: Pre-calculate and display the pot locally
+    
     const activePlayers = takenCardIds.size > 0 ? takenCardIds.size : 2; 
     const expectedPayout = (currentRoom.entry_fee * activePlayers) * 0.80;
     
-    // Instantly lock in the payout amount before the WebSocket fires
-    set({ payout: expectedPayout });
+    // Optimistic Lock
+    set({ 
+      gameStatus: 'finished', 
+      payout: expectedPayout,
+      winnerId: String(tgId),
+      error: null 
+    });
 
     try {
-      // 🚀 THE GHOST FIX: Call our entirely new, clean SQL function
-      const { data, error } = await supabase.rpc('bingo_process_claim', {
+      const { data, error } = await supabase.rpc('bingo_claim_win', {
+        p_session_id: mySession.id,
         p_room_id: currentRoom.id,
-        p_tg_id: tgId
+        p_tg_id: tgId,
+        p_idem_key: `win-${mySession.id}` 
       });
 
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      // Finalize victory with server-confirmed payload
-      set({ 
-        gameStatus: 'finished', 
-        payout: data?.payout || expectedPayout, 
-        winnerId: String(tgId) 
-      });
+      if (data?.payout) set({ payout: data.payout });
       
       return data?.new_balance || 0; 
 
     } catch (e: any) {
       console.error("Claim Error:", e);
-      set({ error: e.message });
+      const errorMessage = e.message || "";
+
+      // 🚀 RACE CONDITION FIX: Graceful Defeat
+      if (errorMessage.includes('already been won')) {
+         set({ 
+           payout: null,
+           winnerId: null,
+           error: null 
+         });
+         return;
+      }
+
+      set({ 
+        error: errorMessage || "Server rejected claim.",
+        gameStatus: 'active',
+        payout: null,
+        winnerId: null
+      });
       throw e;
     }
   },

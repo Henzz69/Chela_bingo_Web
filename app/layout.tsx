@@ -24,23 +24,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
+    // 🚀 UNLOCKED: Removed the hardcoded 'dark' class so the app can freely toggle
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <head>
-        {/*
-          Telegram Web App bridge script.
-          Must load before any JS runs so window.Telegram.WebApp is available.
-          strategy="beforeInteractive" ensures it blocks until loaded.
-        */}
         <Script
           src="https://telegram.org/js/telegram-web-app.js"
           strategy="beforeInteractive"
         />
       </head>
-      <body suppressHydrationWarning className="min-h-full flex flex-col">
+      <body suppressHydrationWarning className="min-h-full flex flex-col bg-[#F0FDF4] dark:bg-[#02120b] transition-colors duration-500">
         {children}
       </body>
     </html>
