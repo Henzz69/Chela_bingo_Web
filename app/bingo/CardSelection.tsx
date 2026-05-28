@@ -15,13 +15,15 @@ const SummaryBar = ({ label, value, colorClass }: { label: string; value: string
 );
 
 export default function BingoCardSelection({ tgId }: Props) {
-  const { currentRoom, selectedCardId, allCardGrids, takenCardIds, selectCardPreview, finalizeJoinWithCard, loadingRooms, error, clearError } = useBingoStore();
+  // 🚀 FIX: Extracted theme here
+  const { currentRoom, selectedCardId, allCardGrids, takenCardIds, selectCardPreview, finalizeJoinWithCard, loadingRooms, error, clearError, theme } = useBingoStore();
 
   if (!currentRoom) return null;
   const currentPreviewGrid = selectedCardId ? allCardGrids[selectedCardId] : null;
 
   return (
-    <div className="w-full h-[100dvh] overflow-hidden bg-[#F0FDF4] dark:bg-[#042014] text-[#022C22] dark:text-white flex flex-col pt-safe transition-colors duration-500">
+    // 🚀 FIX: Hard-bound the theme state directly to the root DOM element
+    <div className={`w-full h-[100dvh] overflow-hidden bg-[#F0FDF4] dark:bg-[#042014] text-[#022C22] dark:text-white flex flex-col pt-safe transition-colors duration-500 ${theme === 'dark' ? 'dark' : ''}`}>
       
       <nav className="shrink-0 bg-white dark:bg-[#0a4a2e] border-b border-[#22C55E]/20 dark:border-white/10 px-4 py-2 flex flex-col gap-2 transition-colors">
         <div className="flex items-center gap-2">

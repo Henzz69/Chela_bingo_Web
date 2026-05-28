@@ -29,15 +29,6 @@ export default function BingoPage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(true);
 
-  // 🚀 THE THEME INJECTOR: Connects Zustand to Tailwind seamlessly
-  useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [theme]);
-
   const fetchWallet = useCallback(async (id: number) => {
     setWalletLoading(true);
     try {
@@ -79,16 +70,17 @@ export default function BingoPage() {
     setLoadingStakeId(opt.amount.toString()); setError(null);
     try {
       await useBingoStore.getState().joinStakeRoom(tgId, opt.amount, opt.players);
-      if (isTelegram) haptic.impact('medium');
+      try { if (isTelegram && haptic && typeof haptic.impact === 'function') haptic.impact('medium'); } catch(e){}
     } catch (e: any) {
       setError(e.message || 'Failed to join room.');
-      if (isTelegram) haptic.notification('error');
+      try { if (isTelegram && haptic && typeof haptic.notification === 'function') haptic.notification('error'); } catch(e){}
     } finally { setLoadingStakeId(null); }
   };
 
+  // 🚀 FIX: Embedded the theme variable directly into all root wrappers
   if (!isTelegram && !tgId) {
     return (
-      <div className="min-h-screen bg-[#F0FDF4] dark:bg-[#042014] flex items-center justify-center p-6 safe-area">
+      <div className={`min-h-screen bg-[#F0FDF4] dark:bg-[#042014] flex items-center justify-center p-6 safe-area ${theme === 'dark' ? 'dark' : ''}`}>
         <div className="text-center">
           <div className="text-5xl mb-4">🎱</div>
           <h2 className="text-[#022C22] dark:text-white text-xl font-bold mb-2">CHELA Bingo</h2>
@@ -100,7 +92,7 @@ export default function BingoPage() {
 
   if (isRecovering && tgId) {
     return (
-      <div className="min-h-screen bg-[#F0FDF4] dark:bg-[#042014] flex flex-col items-center justify-center safe-area">
+      <div className={`min-h-screen bg-[#F0FDF4] dark:bg-[#042014] flex flex-col items-center justify-center safe-area ${theme === 'dark' ? 'dark' : ''}`}>
         <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
         <p className="text-emerald-500 mt-4 font-mono font-bold tracking-widest animate-pulse">RECOVERING SESSION...</p>
       </div>
@@ -117,24 +109,23 @@ export default function BingoPage() {
   ];
 
   return (
-    <div className="w-full h-[100dvh] bg-[#F0FDF4] dark:bg-[#02120b] text-[#022C22] dark:text-white flex flex-col font-sans relative overflow-hidden transition-colors duration-500">
+    <div className={`w-full h-[100dvh] bg-[#F0FDF4] dark:bg-[#02120b] text-[#022C22] dark:text-white flex flex-col font-sans relative overflow-hidden transition-colors duration-500 ${theme === 'dark' ? 'dark' : ''}`}>
       
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] left-[-20%] w-96 h-96 bg-green-500/10 rounded-full blur-3xl"></div>
         <div className="absolute bottom-[20%] right-[-20%] w-96 h-96 bg-yellow-500/10 rounded-full blur-3xl"></div>
       </div>
 
-      {/* TOP NAVIGATION BAR */}
       <div className="relative flex items-center justify-between px-4 pt-4 pb-2 z-10">
         <div className="flex items-center gap-2 z-10">
-          <motion.button whileTap={{ scale: 0.85 }} onClick={() => { if (isTelegram) haptic.selection(); fetchRooms(); fetchWallet(tgId!); }}
+          <motion.button whileTap={{ scale: 0.85 }} onClick={() => { try { if (isTelegram && haptic && typeof haptic.selection === 'function') haptic.selection(); } catch(e){} fetchRooms(); fetchWallet(tgId!); }}
             className="w-10 h-10 flex items-center justify-center rounded-full bg-[#DCFCE7] dark:bg-white/5 border border-[#22C55E]/30 dark:border-white/10 text-[#064E3B] dark:text-white/60 hover:bg-[#bbf7d0] dark:hover:bg-white/15 dark:hover:text-white transition-all shadow-sm">
             <motion.div animate={{ rotate: loadingRooms || walletLoading ? 360 : 0 }} transition={{ repeat: loadingRooms || walletLoading ? Infinity : 0, duration: 1, ease: "linear" }}>
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
             </motion.div>
           </motion.button>
           
-          <motion.button whileTap={{ scale: 0.85 }} onClick={() => { if (isTelegram) haptic.selection(); toggleTheme(); }}
+          <motion.button whileTap={{ scale: 0.85 }} onClick={() => { try { if (isTelegram && haptic && typeof haptic.selection === 'function') haptic.selection(); } catch(e){} toggleTheme(); }}
             className="w-10 h-10 flex items-center justify-center rounded-full bg-[#DCFCE7] dark:bg-white/5 border border-[#22C55E]/30 dark:border-white/10 text-[#064E3B] dark:text-white/60 hover:bg-[#bbf7d0] dark:hover:bg-white/15 dark:hover:text-white transition-all shadow-sm">
             <AnimatePresence mode="wait">
               <motion.span key={theme} initial={{ opacity: 0, rotate: -90, scale: 0.5 }} animate={{ opacity: 1, rotate: 0, scale: 1 }} exit={{ opacity: 0, rotate: 90, scale: 0.5 }} transition={{ duration: 0.2 }} className="text-lg">
@@ -151,7 +142,6 @@ export default function BingoPage() {
         <div className="w-[88px] h-10 z-10" />
       </div>
 
-      {/* HEADER: Balance Tracker */}
       <header className="shrink-0 px-4 pb-4 z-10">
         <div className="bg-white dark:bg-[#062416] border border-[#22C55E]/30 dark:border-green-500/30 rounded-2xl p-4 flex justify-between items-center shadow-sm dark:shadow-[0_4px_20px_rgba(34,197,94,0.15)] transition-colors">
           <span className="text-[#064E3B]/70 dark:text-white/60 font-medium text-sm">Balance</span>
@@ -161,10 +151,8 @@ export default function BingoPage() {
         </div>
       </header>
 
-      {/* MAIN CONTENT AREA */}
       <main className="flex-1 overflow-y-auto px-4 pb-24 z-10 scrollbar-hide">
         <AnimatePresence mode="wait">
-          
           {screen === 'lobby' && (
             <motion.div key="lobby" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} className="flex-1 flex flex-col">
               
@@ -201,9 +189,7 @@ export default function BingoPage() {
                   </button>
 
                   <div className="mt-6 text-center">
-                    <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-orange-500 dark:from-yellow-300 dark:to-yellow-600 drop-shadow-sm uppercase tracking-wider">
-                      WIN UP TO 8000 ETB!
-                    </h2>
+                    <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-orange-500 dark:from-yellow-300 dark:to-yellow-600 drop-shadow-sm uppercase tracking-wider">WIN UP TO 8000 ETB!</h2>
                     <p className="text-[#064E3B]/60 dark:text-white/50 text-xs mt-2 font-medium">Servers are live. Join a room to start winning!</p>
                   </div>
                 </motion.div>
@@ -261,7 +247,6 @@ export default function BingoPage() {
                   </div>
                 </motion.div>
               )}
-
             </motion.div>
           )}
 
@@ -291,14 +276,8 @@ export default function BingoPage() {
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="text-yellow-600 dark:text-yellow-400 font-black text-[10px] uppercase tracking-widest mb-0.5">
-                            {isThisLoading ? '⌛' : 'UP TO'}
-                          </p>
-                          {!isThisLoading && (
-                            <p className="text-green-600 dark:text-green-400 font-black text-lg">
-                              🏆 {opt.maxPrize} ETB
-                            </p>
-                          )}
+                          <p className="text-yellow-600 dark:text-yellow-400 font-black text-[10px] uppercase tracking-widest mb-0.5">{isThisLoading ? '⌛' : 'UP TO'}</p>
+                          {!isThisLoading && <p className="text-green-600 dark:text-green-400 font-black text-lg">🏆 {opt.maxPrize} ETB</p>}
                         </div>
                       </div>
                       {isThisLoading && <div className="absolute inset-0 bg-[#F0FDF4]/90 dark:bg-[#0a4a2e]/90 flex items-center justify-center z-20 rounded-2xl"><div className="w-6 h-6 border-2 border-green-500 border-t-transparent rounded-full animate-spin"></div></div>}
@@ -311,7 +290,6 @@ export default function BingoPage() {
         </AnimatePresence>
       </main>
 
-      {/* BOTTOM NAVIGATION BAR */}
       {screen === 'lobby' && (
         <nav className="shrink-0 absolute bottom-0 w-full bg-white dark:bg-[#03150c] border-t border-[#22C55E]/20 dark:border-white/10 pb-safe pt-2 px-6 z-50 transition-colors duration-500 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] dark:shadow-none">
           <div className="flex justify-between items-center max-w-md mx-auto h-16">
