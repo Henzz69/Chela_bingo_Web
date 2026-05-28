@@ -206,6 +206,15 @@ export const useBingoStore = create<BingoState>((set, get) => ({
       .channel(`bingo-room-${roomId}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'bingo_rooms', filter: `id=eq.${roomId}`}, 
         (payload) => {
+          const { gameStatus } = get();
+
+          // 🛡️ THE FRONTEND LATCH: 
+          // If the game is already locally finished, completely drop any delayed updates from the Python backend 
+          // trying to tell us the game is still 'active'. This prevents the Victory UI from disappearing.
+          if (gameStatus === 'finished') {
+            return;
+          }
+
           const room = payload.new as BingoRoom; 
           const drawn: number[] = room.drawn_numbers ?? [];
           const { mySession, daubed } = get();
@@ -280,6 +289,7 @@ export const useBingoStore = create<BingoState>((set, get) => ({
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
+      // Successfully sets the state to 'finished', locking the UI in place.
       set({ gameStatus: 'finished', payout: data.payout, winnerId: String(tgId) });
       return data.new_balance; 
     } catch (e: any) {
