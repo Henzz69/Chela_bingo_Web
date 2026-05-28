@@ -29,6 +29,10 @@ export interface GameSession {
 }
 
 interface BingoState {
+  // ☀️ THEME STATE
+  theme: 'dark' | 'light';
+  toggleTheme: () => void;
+
   screen: 'lobby' | 'select' | 'card-select' | 'game'; 
   rooms: BingoRoom[];
   loadingRooms: boolean;
@@ -67,6 +71,10 @@ interface BingoState {
 }
 
 export const useBingoStore = create<BingoState>((set, get) => ({
+  // ☀️ THEME INITIALIZATION
+  theme: 'dark',
+  toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
+
   screen: 'lobby',
   rooms: [],
   loadingRooms: false,
@@ -262,15 +270,14 @@ export const useBingoStore = create<BingoState>((set, get) => ({
 
     const newWinResult = checkWin(mySession.grid, newDaubed, new Set(drawnNumbers));
 
-    // 🚀 1. INSTANT LOCAL UPDATE: The UI reacts with zero latency
+    // 🚀 1. INSTANT LOCAL UPDATE
     set({ daubed: newDaubed, winResult: newWinResult });
 
-    // 🛡️ 2. THE NETWORK MUZZLE: Prevent database spam
+    // 🛡️ 2. THE NETWORK MUZZLE
     if (daubSyncTimeout) {
       clearTimeout(daubSyncTimeout);
     }
     
-    // Wait 1 second after the user STOPS tapping before syncing to Supabase
     daubSyncTimeout = setTimeout(async () => {
       try {
         await supabase.rpc('bingo_daub_cell', {
