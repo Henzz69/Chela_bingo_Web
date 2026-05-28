@@ -29,6 +29,17 @@ export default function BingoPage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(true);
 
+  // 🚀 THE THEME ENGINE: This physically forces Tailwind to switch modes in the browser DOM
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+  }, [theme]);
+
   const fetchWallet = useCallback(async (id: number) => {
     setWalletLoading(true);
     try {
@@ -77,7 +88,6 @@ export default function BingoPage() {
     } finally { setLoadingStakeId(null); }
   };
 
-  // 🚀 FIX: Embedded the theme variable directly into all root wrappers
   if (!isTelegram && !tgId) {
     return (
       <div className={`min-h-screen bg-[#F0FDF4] dark:bg-[#042014] flex items-center justify-center p-6 safe-area ${theme === 'dark' ? 'dark' : ''}`}>
