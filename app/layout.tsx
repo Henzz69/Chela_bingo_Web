@@ -18,29 +18,14 @@ export const metadata: Metadata = {
   description: "Live odds, upcoming fixtures, and real-time sports betting.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-      suppressHydrationWarning
-    >
+    // 🚀 THE FIX: Added "dark" here so the app natively defaults to the Night theme without flashing
+    <html lang="en" className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
       <head>
-        {/*
-          Telegram Web App bridge script.
-          Must load before any JS runs so window.Telegram.WebApp is available.
-          strategy="beforeInteractive" ensures it blocks until loaded.
-        */}
-        <Script
-          src="https://telegram.org/js/telegram-web-app.js"
-          strategy="beforeInteractive"
-        />
+        <Script src="https://telegram.org/js/telegram-web-app.js" strategy="beforeInteractive" />
       </head>
-      <body suppressHydrationWarning className="min-h-full flex flex-col">
+      <body suppressHydrationWarning className="min-h-full flex flex-col bg-[#F0FDF4] dark:bg-[#02120b] transition-colors duration-500">
         {children}
       </body>
     </html>
