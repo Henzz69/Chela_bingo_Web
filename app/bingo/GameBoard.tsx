@@ -46,7 +46,6 @@ function IsolatedCountdown({ isReadyToStart, gameStatus }: { isReadyToStart: boo
 }
 
 export default function BingoGameBoard({ tgId }: Props) {
-  // 🚀 FIX: Extracted theme here
   const { currentRoom, mySession, drawnNumbers, daubed, winResult, gameStatus, winnerId, payout, error, takenCardIds, daubCell, claimBingo, leaveGame, clearError, theme } = useBingoStore();
 
   const [isClaiming, setIsClaiming] = useState(false);
@@ -80,7 +79,6 @@ export default function BingoGameBoard({ tgId }: Props) {
   const currentPot = (currentRoom.entry_fee * playerCount) * (1 - HOUSE_EDGE);
 
   return (
-    // 🚀 FIX: Hard-bound the theme state directly to the root DOM element and added ALL dark classes
     <div className={`w-full h-[100dvh] overflow-hidden bg-[#F0FDF4] dark:bg-[#042014] text-[#022C22] dark:text-white flex flex-col pt-safe select-none relative transition-colors duration-500 ${theme === 'dark' ? 'dark' : ''}`}>
       
       <nav className="shrink-0 bg-white dark:bg-[#0a4a2e] border-b border-[#22C55E]/20 dark:border-white/10 px-2 py-2 transition-colors">
@@ -140,7 +138,11 @@ export default function BingoGameBoard({ tgId }: Props) {
                   const isDrawn = drawnNumbers.includes(num);
                   return (
                     <div key={num} className={`flex-1 flex items-center justify-center rounded-sm text-[9px] sm:text-[10px] font-bold transition-all duration-300
-                        ${isDrawn ? 'bg-green-500 text-white shadow-[0_0_8px_rgba(34,197,94,0.5)] z-10 scale-110' : 'bg-[#DCFCE7] dark:bg-[#062416] text-[#064E3B]/60 dark:text-white/20 border border-[#22C55E]/20 dark:border-white/5'}`}>
+                        ${isDrawn 
+                          // 🚀 FIX: Injected the crisp white glowing border specifically for drawn numbers
+                          ? 'bg-green-500 text-white border border-white/60 shadow-[0_0_8px_rgba(34,197,94,0.5),inset_0_0_4px_rgba(255,255,255,0.4)] z-10 scale-110' 
+                          : 'bg-[#DCFCE7] dark:bg-[#062416] text-[#064E3B]/60 dark:text-white/20 border border-[#22C55E]/20 dark:border-white/5'
+                        }`}>
                       {num}
                     </div>
                   );

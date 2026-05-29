@@ -29,7 +29,7 @@ export default function BingoPage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(true);
 
-  // 🚀 THE THEME ENGINE: This physically forces Tailwind to switch modes in the browser DOM
+  // 🚀 THE THEME ENGINE
   useEffect(() => {
     if (typeof window !== 'undefined') {
       if (theme === 'dark') {
@@ -261,16 +261,20 @@ export default function BingoPage() {
           )}
 
           {screen === 'select' && (
-            <motion.div key="select" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }} className="flex-1 flex flex-col">
-              <div className="flex items-center justify-between py-3 sticky top-safe z-10 bg-[#F0FDF4] dark:bg-[#02120b] transition-colors">
-                <motion.button whileTap={{ scale: 0.95 }} onClick={() => useBingoStore.setState({ screen: 'lobby' })} className="flex items-center gap-1 text-[#064E3B]/70 dark:text-white/60 hover:text-black dark:hover:text-white text-sm font-bold">← Back</motion.button>
-                <span className="font-bold text-lg">Choose Room</span>
-                <div className="w-8 h-8" />
+            <motion.div key="select" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }} className="flex-1 flex flex-col relative">
+              
+              {/* 🚀 THE FIX: Seamless Fade Sticky Header */}
+              <div className="sticky top-0 z-20 pt-3 pb-8 -mb-5 bg-gradient-to-b from-[#F0FDF4] from-60% to-transparent dark:from-[#02120b] dark:from-60% dark:to-transparent transition-colors pointer-events-none">
+                <div className="flex items-center justify-between pointer-events-auto px-1">
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => useBingoStore.setState({ screen: 'lobby' })} className="flex items-center gap-1 text-[#064E3B]/70 dark:text-white/60 hover:text-black dark:hover:text-white text-sm font-bold">← Back</motion.button>
+                  <span className="font-bold text-lg drop-shadow-md">Choose Room</span>
+                  <div className="w-8 h-8" />
+                </div>
               </div>
 
-              {error && <div className="mb-3 bg-red-100 dark:bg-red-500/20 border border-red-300 dark:border-red-500/40 rounded-xl px-3 py-2 text-red-600 dark:text-red-300 text-sm font-bold">{error}</div>}
+              {error && <div className="mb-3 mt-5 bg-red-100 dark:bg-red-500/20 border border-red-300 dark:border-red-500/40 rounded-xl px-3 py-2 text-red-600 dark:text-red-300 text-sm font-bold relative z-10">{error}</div>}
 
-              <div className="space-y-4 pb-24 overflow-y-auto max-h-[80vh]">
+              <div className="space-y-4 pb-24 pt-2 overflow-y-auto max-h-[80vh] relative z-10">
                 {STAKE_OPTIONS.map((opt, index) => {
                   const isThisLoading = loadingStakeId === opt.amount.toString();
                   return (
