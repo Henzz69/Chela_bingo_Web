@@ -33,6 +33,10 @@ interface BingoState {
   theme: 'dark' | 'light';
   toggleTheme: () => void;
 
+  // 🤖 AUTO-DAUB STATE
+  isAutoMode: boolean;
+  toggleAutoMode: () => void;
+
   screen: 'lobby' | 'select' | 'card-select' | 'game'; 
   rooms: BingoRoom[];
   loadingRooms: boolean;
@@ -74,6 +78,10 @@ export const useBingoStore = create<BingoState>((set, get) => ({
   // ☀️ THEME INITIALIZATION
   theme: 'dark',
   toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
+
+  // 🤖 AUTO-DAUB INITIALIZATION (Default ON for casuals)
+  isAutoMode: true,
+  toggleAutoMode: () => set((state) => ({ isAutoMode: !state.isAutoMode })),
 
   screen: 'lobby',
   rooms: [],
