@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useBingoStore } from '@/store/bingoStore';
 import { useTelegram } from '@/lib/useTelegram';
+import { supabase } from '@/lib/supabaseClient'; // 🚀 FIX: Imported global client to stop console spam
 import BingoGameBoard from './GameBoard';
 import BingoCardSelection from './CardSelection';
 
@@ -59,23 +60,50 @@ export default function BingoPage() {
     if (screen === 'lobby') fetchRooms();
   }, [screen, fetchRooms]);
 
+  // 🚀 FIX: Decoupled two-step query bypassing strict Foreign Key requirements
   useEffect(() => {
     const fetchHistory = async () => {
       if (!tgId) return;
       setLoadingLogs(true);
       try {
-        const { createClient } = await import('@supabase/supabase-js');
-        const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '');
-        const { data } = await supabase.from('bingo_cards').select('room_id, created_at, bingo_rooms ( entry_fee )').eq('tg_id', tgId).order('created_at', { ascending: false }).limit(15);
-        if (data) {
-          setLogs(data.map((entry: any) => ({
+        const { data: cardsData, error: cardsError } = await supabase
+          .from('bingo_cards')
+          .select('room_id, created_at')
+          .eq('tg_id', tgId)
+          .order('created_at', { ascending: false })
+          .limit(15);
+
+        if (cardsError) throw cardsError;
+
+        if (cardsData && cardsData.length > 0) {
+          const roomIds = [...new Set(cardsData.map(c => c.room_id))];
+          const { data: roomsData, error: roomsError } = await supabase
+            .from('bingo_rooms')
+            .select('id, entry_fee')
+            .in('id', roomIds);
+
+          if (roomsError) throw roomsError;
+
+          const roomFeeMap: Record<string, number> = {};
+          roomsData?.forEach(r => { roomFeeMap[r.id] = r.entry_fee; });
+
+          const formattedLogs = cardsData.map((entry: any) => ({
             id: entry.room_id.substring(0, 8).toUpperCase(),
-            stake: entry.bingo_rooms?.entry_fee || 10,
+            stake: roomFeeMap[entry.room_id] || 10,
             date: new Date(entry.created_at).toLocaleDateString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-          })));
+          }));
+
+          setLogs(formattedLogs);
+        } else {
+          setLogs([]);
         }
-      } catch (err) { console.error(err); } finally { setLoadingLogs(false); }
+      } catch (err) { 
+        console.error("Failed to sync history:", err); 
+      } finally { 
+        setLoadingLogs(false); 
+      }
     };
+    
     if (tab === 'logs') fetchHistory();
   }, [tab, tgId]);
 
