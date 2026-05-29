@@ -86,7 +86,7 @@ def _start_tunnel(port: int = 3000) -> str:
     _tunnel_proc = subprocess.Popen(["npx", "localtunnel", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
     url = None
     for line in _tunnel_proc.stdout:
-        match = re.search(r"your url is:\s*(https://\S+)", line)
+        match = re.search(r"your url is:\s*(https://S+)", line)
         if match:
             url = match.group(1).strip()
             break
@@ -144,6 +144,18 @@ def cancel_reply_keyboard() -> ReplyKeyboardMarkup:
 
 def remove_keyboard() -> ReplyKeyboardRemove:
     return ReplyKeyboardRemove()
+
+def payment_methods_markup(amount: float) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("Telebirr 📱", callback_data=f"dep_method|telebirr|{amount}"),
+        InlineKeyboardButton("CBE 🏦", callback_data=f"dep_method|cbe|{amount}"),
+        InlineKeyboardButton("Dashen Bank 🏛️", callback_data=f"dep_method|dashen|{amount}"),
+        InlineKeyboardButton("Bank of Abyssinia 🦁", callback_data=f"dep_method|abyssinia|{amount}"),
+        InlineKeyboardButton("CBE Birr 💵", callback_data=f"dep_method|cbe_birr|{amount}"),
+        InlineKeyboardButton("M-Pesa 💸", callback_data=f"dep_method|mpesa|{amount}")
+    )
+    return kb
 
 # ---------------------------------------------------------------------------
 # COMMANDS
@@ -236,6 +248,22 @@ def handle_callback(call):
         set_state(chat_id, STATE_AWAITING_WITHDRAW)
         bot.send_message(chat_id, "📤 *Withdraw Funds*\n\nPlease enter the amount you want to withdraw:", reply_markup=cancel_reply_keyboard())
 
+    elif data.startswith("dep_method|"):
+        bot.answer_callback_query(call.id)
+        parts = data.split("|")
+        method = parts[1]
+        amount = parts[2]
+        
+        # Transition user to handle transaction token input
+        set_state(chat_id, STATE_AWAITING_TXN_SMS)
+        
+        # Current test placeholder instruction
+        bot.send_message(
+            chat_id,
+            "send transaction id instruction",
+            reply_markup=cancel_reply_keyboard()
+        )
+
     else:
         bot.answer_callback_query(call.id)
 
@@ -287,15 +315,12 @@ def handle_text(message):
             return
 
         if state == STATE_AWAITING_DEPOSIT:
-            set_state(chat_id, STATE_AWAITING_TXN_SMS)
+            # Shift state to clear input loop, inline buttons handle the next state assignment
+            set_state(chat_id, STATE_IDLE)
             bot.send_message(
                 chat_id,
-                f"🏦 *Telebirr Payment Instructions*\n\n"
-                f"1️⃣ Open Telebirr and send exactly *{amount:.0f} ETB* to:\n"
-                f"`0966617175`\n\n"
-                f"2️⃣ Once you send the money, Telebirr will send you a confirmation SMS.\n\n"
-                f"3️⃣ *Copy that full SMS and paste it right here* to verify your deposit.",
-                reply_markup=cancel_reply_keyboard(),
+                f"💸 *Amount Selected:* `{amount:.2f} ETB`\n\nPlease choose your deposit provider:",
+                reply_markup=payment_methods_markup(amount)
             )
 
         elif state == STATE_AWAITING_WITHDRAW:
