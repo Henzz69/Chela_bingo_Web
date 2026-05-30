@@ -38,15 +38,15 @@ VERIFIER_API_KEY      = os.getenv("VERIFIER_API_KEY", "")  # Your verify.leul.et
 ADMIN_IDS = [5681654051]  # Henok
 
 def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS[cite: 2]
+    return user_id in ADMIN_IDS
 
 def _admin_log(admin_id: int, command: str, target: str = "N/A") -> None:
     from datetime import datetime
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[ADMIN ACTION] [{ts}] Admin {admin_id} performed {command} on User {target}")[cite: 2]
+    print(f"[ADMIN ACTION] [{ts}] Admin {admin_id} performed {command} on User {target}")
 
 if not BOT_TOKEN or BOT_TOKEN == "your_bot_token_here":
-    raise RuntimeError("TELEGRAM_BOT_TOKEN is not set in .env")[cite: 2]
+    raise RuntimeError("TELEGRAM_BOT_TOKEN is not set in .env")
 
 # ---------------------------------------------------------------------------
 # SUPABASE CLIENT
@@ -55,29 +55,29 @@ _supabase = None
 if SUPABASE_URL and SUPABASE_SERVICE_KEY:
     try:
         _supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-        print("--- Supabase client created successfully ---")[cite: 2]
+        print("--- Supabase client created successfully ---")
     except Exception as e:
-        print(f"--- ERROR creating Supabase client: {e} ---")[cite: 2]
-        _supabase = None[cite: 2]
+        print(f"--- ERROR creating Supabase client: {e} ---")
+        _supabase = None
 
 def _get_user_balance(tg_id: int) -> float:
-    if _supabase is None: return 0.00[cite: 2]
+    if _supabase is None: return 0.00
     try:
-        result = _supabase.table("tg_users").select("balance").eq("tg_id", tg_id).maybe_single().execute()[cite: 2]
-        if result.data and result.data.get("balance") is not None:[cite: 2]
-            return float(result.data["balance"])[cite: 2]
+        result = _supabase.table("tg_users").select("balance").eq("tg_id", tg_id).maybe_single().execute()
+        if result.data and result.data.get("balance") is not None:
+            return float(result.data["balance"])
     except Exception as e:
-        print(f"[balance lookup error] {e}")[cite: 2]
-    return 0.00[cite: 2]
+        print(f"[balance lookup error] {e}")
+    return 0.00
 
 def _is_user_registered(tg_id: int) -> bool:
-    if _supabase is None: return False[cite: 2]
+    if _supabase is None: return False
     try:
-        result = _supabase.table("tg_users").select("tg_id").eq("tg_id", tg_id).maybe_single().execute()[cite: 2]
-        if result and hasattr(result, 'data') and result.data is not None:[cite: 2]
-            return True[cite: 2]
-        return False[cite: 2]
-    except Exception: return False[cite: 2]
+        result = _supabase.table("tg_users").select("tg_id").eq("tg_id", tg_id).maybe_single().execute()
+        if result and hasattr(result, 'data') and result.data is not None:
+            return True
+        return False
+    except Exception: return False
 
 # ---------------------------------------------------------------------------
 # AUTO-TUNNEL (For Local Testing Only)
@@ -86,42 +86,42 @@ _tunnel_proc = None
 
 def _start_tunnel(port: int = 3000) -> str:
     global _tunnel_proc
-    print(f"--- Starting localtunnel on port {port} ---")[cite: 2]
-    _tunnel_proc = subprocess.Popen(["npx", "localtunnel", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)[cite: 2]
-    url = None[cite: 2]
-    for line in _tunnel_proc.stdout:[cite: 2]
-        match = re.search(r"your url is:\s*(https://S+)", line)[cite: 2]
-        if match:[cite: 2]
-            url = match.group(1).strip()[cite: 2]
-            break[cite: 2]
-    threading.Thread(target=lambda: _tunnel_proc.stdout.read(), daemon=True).start()[cite: 2]
-    return url[cite: 2]
+    print(f"--- Starting localtunnel on port {port} ---")
+    _tunnel_proc = subprocess.Popen(["npx", "localtunnel", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
+    url = None
+    for line in _tunnel_proc.stdout:
+        match = re.search(r"your url is:\s*(https://S+)", line)
+        if match:
+            url = match.group(1).strip()
+            break
+    threading.Thread(target=lambda: _tunnel_proc.stdout.read(), daemon=True).start()
+    return url
 
 if not MINI_APP_URL or "your-deployed-url" in MINI_APP_URL:
     try:
-        raw_url = _start_tunnel(3000)[cite: 2]
-        MINI_APP_URL = raw_url.rstrip("/") + "/bingo"[cite: 2]
-        set_key(ENV_FILE, "MINI_APP_URL", MINI_APP_URL)[cite: 2]
-        print(f"--- Tunnel URL saved to .env: {MINI_APP_URL} ---")[cite: 2]
-    except Exception: pass[cite: 2]
+        raw_url = _start_tunnel(3000)
+        MINI_APP_URL = raw_url.rstrip("/") + "/bingo"
+        set_key(ENV_FILE, "MINI_APP_URL", MINI_APP_URL)
+        print(f"--- Tunnel URL saved to .env: {MINI_APP_URL} ---")
+    except Exception: pass
 
 # ---------------------------------------------------------------------------
 # BOT INIT & MULTI-LANGUAGE STATE
 # ---------------------------------------------------------------------------
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")[cite: 2]
-bot.delete_webhook(drop_pending_updates=True)[cite: 2]
+bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
+bot.delete_webhook(drop_pending_updates=True)
 
-user_state: dict[int, str] = {}[cite: 2]
+user_state: dict[int, str] = {}
 user_lang: dict[int, str] = {}  
 user_deposit_data: dict[int, dict] = {} 
 
-STATE_IDLE              = "IDLE"[cite: 2]
-STATE_AWAITING_DEPOSIT  = "AWAITING_DEPOSIT"[cite: 2]
-STATE_AWAITING_TXN_SMS  = "AWAITING_TXN_SMS"[cite: 2]
-STATE_AWAITING_WITHDRAW = "AWAITING_WITHDRAW"[cite: 2]
+STATE_IDLE              = "IDLE"
+STATE_AWAITING_DEPOSIT  = "AWAITING_DEPOSIT"
+STATE_AWAITING_TXN_SMS  = "AWAITING_TXN_SMS"
+STATE_AWAITING_WITHDRAW = "AWAITING_WITHDRAW"
 
-def get_state(chat_id: int) -> str: return user_state.get(chat_id, STATE_IDLE)[cite: 2]
-def set_state(chat_id: int, state: str) -> None: user_state[chat_id] = state[cite: 2]
+def get_state(chat_id: int) -> str: return user_state.get(chat_id, STATE_IDLE)
+def set_state(chat_id: int, state: str) -> None: user_state[chat_id] = state
 
 def get_lang(chat_id: int) -> str: return user_lang.get(chat_id, "en")
 def set_lang(chat_id: int, lang: str) -> None: user_lang[chat_id] = lang
@@ -201,36 +201,36 @@ def lang_selection_markup() -> InlineKeyboardMarkup:
 
 def registration_markup(lang: str) -> ReplyKeyboardMarkup:
     kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    kb.add(KeyboardButton(STRINGS[lang]["reg_btn"], request_contact=True))[cite: 2]
+    kb.add(KeyboardButton(STRINGS[lang]["reg_btn"], request_contact=True))
     return kb
 
 def main_menu_markup(lang: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(InlineKeyboardButton(STRINGS[lang]["play_btn"], web_app=WebAppInfo(url=MINI_APP_URL)))[cite: 2]
+    kb.add(InlineKeyboardButton(STRINGS[lang]["play_btn"], web_app=WebAppInfo(url=MINI_APP_URL)))
     kb.add(
-        InlineKeyboardButton(STRINGS[lang]["dep_btn"],  callback_data="action_deposit"),[cite: 2]
-        InlineKeyboardButton(STRINGS[lang]["with_btn"], callback_data="action_withdraw"),[cite: 2]
+        InlineKeyboardButton(STRINGS[lang]["dep_btn"],  callback_data="action_deposit"),
+        InlineKeyboardButton(STRINGS[lang]["with_btn"], callback_data="action_withdraw"),
     )
     kb.add(
-        InlineKeyboardButton(STRINGS[lang]["bal_btn"], callback_data="action_balance"),[cite: 2]
+        InlineKeyboardButton(STRINGS[lang]["bal_btn"], callback_data="action_balance"),
         InlineKeyboardButton(STRINGS[lang]["lang_btn"], callback_data="action_change_lang")
     )
     return kb
 
 def cancel_reply_keyboard(lang: str) -> ReplyKeyboardMarkup:
     kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False)
-    kb.add(KeyboardButton(STRINGS[lang]["cancel_btn"]))[cite: 2]
+    kb.add(KeyboardButton(STRINGS[lang]["cancel_btn"]))
     return kb
 
 def payment_methods_markup() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
-        InlineKeyboardButton("Telebirr 📱", callback_data="dep_prov|telebirr"),[cite: 2]
-        InlineKeyboardButton("CBE 🏦", callback_data="dep_prov|cbe"),[cite: 2]
-        InlineKeyboardButton("Dashen Bank 🏛️", callback_data="dep_prov|dashen"),[cite: 2]
-        InlineKeyboardButton("Bank of Abyssinia 🦁", callback_data="dep_prov|abyssinia"),[cite: 2]
-        InlineKeyboardButton("CBE Birr 💵", callback_data="dep_prov|cbe_birr"),[cite: 2]
-        InlineKeyboardButton("M-Pesa 💸", callback_data="dep_prov|mpesa")[cite: 2]
+        InlineKeyboardButton("Telebirr 📱", callback_data="dep_prov|telebirr"),
+        InlineKeyboardButton("CBE 🏦", callback_data="dep_prov|cbe"),
+        InlineKeyboardButton("Dashen Bank 🏛️", callback_data="dep_prov|dashen"),
+        InlineKeyboardButton("Bank of Abyssinia 🦁", callback_data="dep_prov|abyssinia"),
+        InlineKeyboardButton("CBE Birr 💵", callback_data="dep_prov|cbe_birr"),
+        InlineKeyboardButton("M-Pesa 💸", callback_data="dep_prov|mpesa")
     )
     return kb
 
@@ -249,7 +249,7 @@ def quick_amount_markup() -> InlineKeyboardMarkup:
     return kb
 
 def remove_keyboard() -> ReplyKeyboardRemove:
-    return ReplyKeyboardRemove()[cite: 2]
+    return ReplyKeyboardRemove()
 
 # ---------------------------------------------------------------------------
 # REUSABLE TRANSACTION PARSER
@@ -277,7 +277,7 @@ def _extract_transaction_id(text: str) -> str:
 # ---------------------------------------------------------------------------
 @bot.message_handler(commands=["start"])
 def cmd_start(message):
-    set_state(message.chat.id, STATE_IDLE)[cite: 2]
+    set_state(message.chat.id, STATE_IDLE)
     bot.send_message(
         message.chat.id,
         "🌐 Choose Language / እባክዎ ቋንቋ ይምረጡ፡",
@@ -286,126 +286,126 @@ def cmd_start(message):
 
 @bot.message_handler(content_types=["contact"])
 def handle_contact(message):
-    chat_id = message.chat.id[cite: 2]
-    contact = message.contact[cite: 2]
+    chat_id = message.chat.id
+    contact = message.contact
     lang    = get_lang(chat_id)
 
-    if contact.user_id != message.from_user.id:[cite: 2]
-        bot.send_message(chat_id, STRINGS[lang]["invalid_contact"], reply_markup=registration_markup(lang))[cite: 2]
-        return[cite: 2]
+    if contact.user_id != message.from_user.id:
+        bot.send_message(chat_id, STRINGS[lang]["invalid_contact"], reply_markup=registration_markup(lang))
+        return
 
-    tg_id       = contact.user_id[cite: 2]
-    first_name  = message.from_user.first_name or ""[cite: 2]
-    last_name   = message.from_user.last_name or ""[cite: 2]
-    username    = message.from_user.username[cite: 2]
-    phone       = contact.phone_number   [cite: 2]
-    display     = f"{first_name} {last_name}".strip() or f"Player_{tg_id}"[cite: 2]
+    tg_id       = contact.user_id
+    first_name  = message.from_user.first_name or ""
+    last_name   = message.from_user.last_name or ""
+    username    = message.from_user.username
+    phone       = contact.phone_number   
+    display     = f"{first_name} {last_name}".strip() or f"Player_{tg_id}"
 
-    if _supabase is not None:[cite: 2]
-        try:[cite: 2]
-            _supabase.table("tg_users").upsert({[cite: 2]
-                "tg_id": tg_id, "display_name": display, "tg_username": username,[cite: 2]
-                "phone": phone, "password_hash": "telegram_native_auth",[cite: 2]
-            }, on_conflict="tg_id").execute()[cite: 2]
-        except Exception:[cite: 2]
-            bot.send_message(chat_id, "❌ Server error. Try /start again.", reply_markup=remove_keyboard())[cite: 2]
-            return[cite: 2]
+    if _supabase is not None:
+        try:
+            _supabase.table("tg_users").upsert({
+                "tg_id": tg_id, "display_name": display, "tg_username": username,
+                "phone": phone, "password_hash": "telegram_native_auth",
+            }, on_conflict="tg_id").execute()
+        except Exception:
+            bot.send_message(chat_id, "❌ Server error. Try /start again.", reply_markup=remove_keyboard())
+            return
 
-    bot.send_message(chat_id, STRINGS[lang]["reg_success"], reply_markup=remove_keyboard())[cite: 2]
-    bot.send_message(chat_id, "🎮 *Main Menu*", reply_markup=main_menu_markup(lang))[cite: 2]
+    bot.send_message(chat_id, STRINGS[lang]["reg_success"], reply_markup=remove_keyboard())
+    bot.send_message(chat_id, "🎮 *Main Menu*", reply_markup=main_menu_markup(lang))
 
 # ---------------------------------------------------------------------------
 # CALLBACKS
 # ---------------------------------------------------------------------------
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
-    chat_id = call.message.chat.id[cite: 2]
-    data    = call.data[cite: 2]
+    chat_id = call.message.chat.id
+    data    = call.data
     lang    = get_lang(chat_id)
 
     if data.startswith("set_lang|"):
-        bot.answer_callback_query(call.id)[cite: 2]
+        bot.answer_callback_query(call.id)
         selected_lang = data.split("|")[1]
         set_lang(chat_id, selected_lang)
         
-        if _is_user_registered(call.from_user.id):[cite: 2]
-            bot.send_message(chat_id, STRINGS[selected_lang]["welcome_back"], reply_markup=main_menu_markup(selected_lang))[cite: 2]
-        else:[cite: 2]
-            bot.send_message(chat_id, STRINGS[selected_lang]["welcome_new"], reply_markup=registration_markup(selected_lang))[cite: 2]
+        if _is_user_registered(call.from_user.id):
+            bot.send_message(chat_id, STRINGS[selected_lang]["welcome_back"], reply_markup=main_menu_markup(selected_lang))
+        else:
+            bot.send_message(chat_id, STRINGS[selected_lang]["welcome_new"], reply_markup=registration_markup(selected_lang))
 
     elif data == "action_change_lang":
-        bot.answer_callback_query(call.id)[cite: 2]
+        bot.answer_callback_query(call.id)
         bot.send_message(chat_id, "🌐 Choose Language / እባክዎ ቋንቋ ይምረጡ፡", reply_markup=lang_selection_markup())
 
     elif data == "action_balance":
-        bot.answer_callback_query(call.id)[cite: 2]
-        balance = _get_user_balance(call.from_user.id)[cite: 2]
-        bot.send_message(chat_id, STRINGS[lang]["curr_bal"].format(balance))[cite: 2]
-        bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))[cite: 2]
+        bot.answer_callback_query(call.id)
+        balance = _get_user_balance(call.from_user.id)
+        bot.send_message(chat_id, STRINGS[lang]["curr_bal"].format(balance))
+        bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
 
     elif data == "action_deposit":
-        bot.answer_callback_query(call.id)[cite: 2]
-        bot.send_message(chat_id, STRINGS[lang]["choose_provider"], reply_markup=payment_methods_markup())[cite: 2]
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, STRINGS[lang]["choose_provider"], reply_markup=payment_methods_markup())
 
     elif data.startswith("dep_prov|"):
-        bot.answer_callback_query(call.id)[cite: 2]
-        provider = data.split("|")[1][cite: 2]
-        user_deposit_data[chat_id] = {"provider": provider}[cite: 2]
+        bot.answer_callback_query(call.id)
+        provider = data.split("|")[1]
+        user_deposit_data[chat_id] = {"provider": provider}
         
-        set_state(chat_id, STATE_AWAITING_DEPOSIT)[cite: 2]
-        bot.send_message(chat_id, STRINGS[lang]["enter_amount"], reply_markup=cancel_reply_keyboard(lang))[cite: 2]
+        set_state(chat_id, STATE_AWAITING_DEPOSIT)
+        bot.send_message(chat_id, STRINGS[lang]["enter_amount"], reply_markup=cancel_reply_keyboard(lang))
         bot.send_message(chat_id, "💡 Quick Options:", reply_markup=quick_amount_markup())
 
     elif data.startswith("dep_amt|"):
-        bot.answer_callback_query(call.id)[cite: 2]
-        if chat_id not in user_deposit_data:[cite: 2]
-            user_deposit_data[chat_id] = {"provider": "telebirr"}[cite: 2]
+        bot.answer_callback_query(call.id)
+        if chat_id not in user_deposit_data:
+            user_deposit_data[chat_id] = {"provider": "telebirr"}
         
-        amount = float(data.split("|")[1])[cite: 2]
-        user_deposit_data[chat_id]["amount"] = amount[cite: 2]
-        provider = user_deposit_data[chat_id]["provider"][cite: 2]
+        amount = float(data.split("|")[1])
+        user_deposit_data[chat_id]["amount"] = amount
+        provider = user_deposit_data[chat_id]["provider"]
         
-        set_state(chat_id, STATE_AWAITING_TXN_SMS)[cite: 2]
+        set_state(chat_id, STATE_AWAITING_TXN_SMS)
         
         if provider == "telebirr":
-            inst_txt = STRINGS[lang]["inst_telebirr"].format(amount)[cite: 2]
+            inst_txt = STRINGS[lang]["inst_telebirr"].format(amount)
         elif provider == "cbe":
-            inst_txt = STRINGS[lang]["inst_cbe"].format(amount)[cite: 2]
+            inst_txt = STRINGS[lang]["inst_cbe"].format(amount)
         else:
-            inst_txt = f"⚙️ *{provider.upper()} DEPOSIT INSTRUCTION*\n\nPlease transfer *{amount} ETB* to our verified account system and paste the receipt details directly below:"[cite: 2]
+            inst_txt = f"⚙️ *{provider.upper()} DEPOSIT INSTRUCTION*\n\nPlease transfer *{amount} ETB* to our verified account system and paste the receipt details directly below:"
 
-        bot.send_message(chat_id, inst_txt, reply_markup=cancel_reply_keyboard(lang))[cite: 2]
+        bot.send_message(chat_id, inst_txt, reply_markup=cancel_reply_keyboard(lang))
 
     elif data == "action_withdraw":
-        bot.answer_callback_query(call.id)[cite: 2]
-        set_state(chat_id, STATE_AWAITING_WITHDRAW)[cite: 2]
-        bot.send_message(chat_id, STRINGS[lang]["enter_with_amount"], reply_markup=cancel_reply_keyboard(lang))[cite: 2]
+        bot.answer_callback_query(call.id)
+        set_state(chat_id, STATE_AWAITING_WITHDRAW)
+        bot.send_message(chat_id, STRINGS[lang]["enter_with_amount"], reply_markup=cancel_reply_keyboard(lang))
 
     else:
-        bot.answer_callback_query(call.id)[cite: 2]
+        bot.answer_callback_query(call.id)
 
 # ---------------------------------------------------------------------------
 # STATE MACHINE (TEXT HANDLER & LIVE VERIFICATION)
 # ---------------------------------------------------------------------------
 @bot.message_handler(func=lambda m: m.content_type == "text" and not m.text.startswith("/"))
 def handle_text(message):
-    chat_id = message.chat.id[cite: 2]
-    text    = message.text.strip()[cite: 2]
-    state   = get_state(chat_id)[cite: 2]
+    chat_id = message.chat.id
+    text    = message.text.strip()
+    state   = get_state(chat_id)
     lang    = get_lang(chat_id)
 
-    if text in (STRINGS["en"]["cancel_btn"], STRINGS["am"]["cancel_btn"]):[cite: 2]
-        set_state(chat_id, STATE_IDLE)[cite: 2]
-        bot.send_message(chat_id, STRINGS[lang]["action_cancelled"], reply_markup=remove_keyboard())[cite: 2]
-        bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))[cite: 2]
+    if text in (STRINGS["en"]["cancel_btn"], STRINGS["am"]["cancel_btn"]):
+        set_state(chat_id, STATE_IDLE)
+        bot.send_message(chat_id, STRINGS[lang]["action_cancelled"], reply_markup=remove_keyboard())
+        bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
         return
 
-    # 🚀 AUTOMATED BANK VERIFICATION ENGINE ENGINE
+    # 🚀 AUTOMATED BANK VERIFICATION ENGINE
     if state == STATE_AWAITING_TXN_SMS:
-        set_state(chat_id, STATE_IDLE)[cite: 2]
+        set_state(chat_id, STATE_IDLE)
         
         clean_txn_id = _extract_transaction_id(text)
-        dep_info = user_deposit_data.get(chat_id, {"provider": "telebirr", "amount": 0.0})[cite: 2]
+        dep_info = user_deposit_data.get(chat_id, {"provider": "telebirr", "amount": 0.0})
         expected_amount = float(dep_info.get("amount", 0.0))
 
         # Check for CBE account suffix formatting parameter
@@ -463,97 +463,97 @@ def handle_text(message):
             bot.delete_message(chat_id, wait_msg.message_id)
             bot.send_message(chat_id, STRINGS[lang]["api_error"], reply_markup=remove_keyboard())
 
-        bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))[cite: 2]
-        return[cite: 2]
+        bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
+        return
 
-    if state in (STATE_AWAITING_DEPOSIT, STATE_AWAITING_WITHDRAW):[cite: 2]
-        try:[cite: 2]
-            amount = float(text)[cite: 2]
-            if amount <= 0: raise ValueError[cite: 2]
-        except ValueError:[cite: 2]
-            bot.send_message(chat_id, STRINGS[lang]["invalid_amount"])[cite: 2]
-            return[cite: 2]
+    if state in (STATE_AWAITING_DEPOSIT, STATE_AWAITING_WITHDRAW):
+        try:
+            amount = float(text)
+            if amount <= 0: raise ValueError
+        except ValueError:
+            bot.send_message(chat_id, STRINGS[lang]["invalid_amount"])
+            return
 
-        if state == STATE_AWAITING_DEPOSIT:[cite: 2]
-            if chat_id not in user_deposit_data:[cite: 2]
-                user_deposit_data[chat_id] = {"provider": "telebirr"}[cite: 2]
+        if state == STATE_AWAITING_DEPOSIT:
+            if chat_id not in user_deposit_data:
+                user_deposit_data[chat_id] = {"provider": "telebirr"}
             
-            user_deposit_data[chat_id]["amount"] = amount[cite: 2]
-            provider = user_deposit_data[chat_id]["provider"][cite: 2]
+            user_deposit_data[chat_id]["amount"] = amount
+            provider = user_deposit_data[chat_id]["provider"]
             
-            set_state(chat_id, STATE_AWAITING_TXN_SMS)[cite: 2]
+            set_state(chat_id, STATE_AWAITING_TXN_SMS)
             
             if provider == "telebirr":
-                inst_txt = STRINGS[lang]["inst_telebirr"].format(amount)[cite: 2]
+                inst_txt = STRINGS[lang]["inst_telebirr"].format(amount)
             elif provider == "cbe":
-                inst_txt = STRINGS[lang]["inst_cbe"].format(amount)[cite: 2]
+                inst_txt = STRINGS[lang]["inst_cbe"].format(amount)
             else:
-                inst_txt = f"⚙️ *{provider.upper()} DEPOSIT INSTRUCTION*\n\nPlease transfer *{amount} ETB* to our verified account system and paste the receipt details directly below:"[cite: 2]
+                inst_txt = f"⚙️ *{provider.upper()} DEPOSIT INSTRUCTION*\n\nPlease transfer *{amount} ETB* to our verified account system and paste the receipt details directly below:"
 
-            bot.send_message(chat_id, inst_txt, reply_markup=cancel_reply_keyboard(lang))[cite: 2]
+            bot.send_message(chat_id, inst_txt, reply_markup=cancel_reply_keyboard(lang))
 
-        elif state == STATE_AWAITING_WITHDRAW:[cite: 2]
-            user_balance = _get_user_balance(message.from_user.id)[cite: 2]
-            set_state(chat_id, STATE_IDLE)[cite: 2]
+        elif state == STATE_AWAITING_WITHDRAW:
+            user_balance = _get_user_balance(message.from_user.id)
+            set_state(chat_id, STATE_IDLE)
             
-            if amount > user_balance:[cite: 2]
-                bot.send_message(chat_id, STRINGS[lang]["insufficient"].format(user_balance), reply_markup=remove_keyboard())[cite: 2]
-            else:[cite: 2]
-                bot.send_message(chat_id, STRINGS[lang]["with_submitted"].format(amount), reply_markup=remove_keyboard())[cite: 2]
+            if amount > user_balance:
+                bot.send_message(chat_id, STRINGS[lang]["insufficient"].format(user_balance), reply_markup=remove_keyboard())
+            else:
+                bot.send_message(chat_id, STRINGS[lang]["with_submitted"].format(amount), reply_markup=remove_keyboard())
                 
-                try:[cite: 2]
-                    bot.send_message(ADMIN_IDS[0], f"💸 *NEW WITHDRAW REQUEST*\nUser ID: `{message.from_user.id}`\nAmount: `{amount:.2f} ETB`")[cite: 2]
-                except Exception: pass[cite: 2]
+                try:
+                    bot.send_message(ADMIN_IDS[0], f"💸 *NEW WITHDRAW REQUEST*\nUser ID: `{message.from_user.id}`\nAmount: `{amount:.2f} ETB`")
+                except Exception: pass
 
-            bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))[cite: 2]
-        return[cite: 2]
+            bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
+        return
 
-    if state == STATE_IDLE:[cite: 2]
-        bot.send_message(chat_id, "Please use the menu below:", reply_markup=main_menu_markup(lang))[cite: 2]
+    if state == STATE_IDLE:
+        bot.send_message(chat_id, "Please use the menu below:", reply_markup=main_menu_markup(lang))
 
 # ---------------------------------------------------------------------------
 # ADMIN COMMANDS
 # ---------------------------------------------------------------------------
 @bot.message_handler(commands=["credit"])
 def cmd_credit(message):
-    admin_id = message.from_user.id[cite: 2]
-    chat_id  = message.chat.id[cite: 2]
+    admin_id = message.from_user.id
+    chat_id  = message.chat.id
 
-    if not is_admin(admin_id): return[cite: 2]
+    if not is_admin(admin_id): return
 
-    parts = message.text.strip().split()[cite: 2]
-    if len(parts) < 2:[cite: 2]
-        bot.send_message(chat_id, "⚠️ *Usage:* `/credit <amount> [target_tg_id]`")[cite: 2]
-        return[cite: 2]
+    parts = message.text.strip().split()
+    if len(parts) < 2:
+        bot.send_message(chat_id, "⚠️ *Usage:* `/credit <amount> [target_tg_id]`")
+        return
 
-    try: amount = float(parts[1])[cite: 2]
-    except ValueError: return bot.send_message(chat_id, "⚠️ Invalid amount.")[cite: 2]
+    try: amount = float(parts[1])
+    except ValueError: return bot.send_message(chat_id, "⚠️ Invalid amount.")
 
-    target_tg_id = admin_id[cite: 2]
-    if len(parts) >= 3:[cite: 2]
-        try: target_tg_id = int(parts[2])[cite: 2]
-        except ValueError: return bot.send_message(chat_id, "⚠️ Invalid target ID.")[cite: 2]
+    target_tg_id = admin_id
+    if len(parts) >= 3:
+        try: target_tg_id = int(parts[2])
+        except ValueError: return bot.send_message(chat_id, "⚠️ Invalid target ID.")
 
-    if _supabase is None: return[cite: 2]
+    if _supabase is None: return
 
     try:
-        current = _get_user_balance(target_tg_id)[cite: 2]
-        new_bal = current + amount[cite: 2]
-        _supabase.table("tg_users").update({"balance": new_bal}).eq("tg_id", target_tg_id).execute()[cite: 2]
+        current = _get_user_balance(target_tg_id)
+        new_bal = current + amount
+        _supabase.table("tg_users").update({"balance": new_bal}).eq("tg_id", target_tg_id).execute()
 
-        bot.send_message([cite: 2]
-            chat_id,[cite: 2]
-            f"✅ *Credited {amount:.2f} ETB* to `{target_tg_id}`.\n\n"[cite: 2]
-            f"💰 *New balance:* `{new_bal:.2f} ETB`"[cite: 2]
+        bot.send_message(
+            chat_id,
+            f"✅ *Credited {amount:.2f} ETB* to `{target_tg_id}`.\n\n"
+            f"💰 *New balance:* `{new_bal:.2f} ETB`"
         )
         
-        try:[cite: 2]
-            bot.send_message(target_tg_id, f"🎉 *Deposit Successful!*\n\nYour account has been credited with `{amount:.2f} ETB`. Good luck playing CHELA Bingo!")[cite: 2]
-        except Exception: pass[cite: 2]
+        try:
+            bot.send_message(target_tg_id, f"🎉 *Deposit Successful!*\n\nYour account has been credited with `{amount:.2f} ETB`. Good luck playing CHELA Bingo!")
+        except Exception: pass
         
     except Exception as e:
-        bot.send_message(chat_id, f"❌ *Credit failed.*\n\nError: `{str(e)[:200]}`")[cite: 2]
+        bot.send_message(chat_id, f"❌ *Credit failed.*\n\nError: `{str(e)[:200]}`")
 
 if __name__ == "__main__":
-    print(f"--- CHELA Bingo Bot Starting ---")[cite: 2]
-    bot.infinity_polling(timeout=30, long_polling_timeout=20)[cite: 2]
+    print(f"--- CHELA Bingo Bot Starting ---")
+    bot.infinity_polling(timeout=30, long_polling_timeout=20)
