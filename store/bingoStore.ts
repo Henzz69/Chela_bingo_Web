@@ -16,6 +16,8 @@ export interface BingoRoom {
   winner_id?: string | null;
   active_game_count?: number; 
   generation_seed?: string; 
+  // 🚀 NEW: Type definition for the real-time proof of win snapshot
+  winning_card_snapshot?: { grid: number[], daubed: number[] };
 }
 
 export interface GameSession {
