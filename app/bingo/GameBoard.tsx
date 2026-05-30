@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useBingoStore } from '@/store/bingoStore';
 import { columnLetter } from '@/lib/bingoCards';
-import { useTelegram } from '@/lib/useTelegram'; // To trigger haptics if desired later
+import { useTelegram } from '@/lib/useTelegram'; 
 
 const COLUMNS = ['B', 'I', 'N', 'G', 'O'];
 const HOUSE_EDGE = 0.20; 
@@ -47,24 +47,29 @@ function IsolatedCountdown({ isReadyToStart, gameStatus }: { isReadyToStart: boo
 }
 
 export default function BingoGameBoard({ tgId }: Props) {
-  // 🚀 FIX: Pulled in isAutoMode and toggleAutoMode
   const { currentRoom, mySession, drawnNumbers, daubed, winResult, gameStatus, winnerId, payout, error, takenCardIds, daubCell, claimBingo, leaveGame, clearError, theme, isAutoMode, toggleAutoMode } = useBingoStore();
   const { isTelegram, haptic } = useTelegram();
 
   const [isClaiming, setIsClaiming] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showFalseAlarm, setShowFalseAlarm] = useState(false);
+  const [showLeaveWarning, setShowLeaveWarning] = useState(false);
   
   const playerCount = takenCardIds.size;
   const isReadyToStart = playerCount >= 2;
   const lastDrawn = drawnNumbers.length > 0 ? drawnNumbers[drawnNumbers.length - 1] : null;
 
-  // 🤖 THE AUTO-DAUBER WATCHER
+  // 🛡️ THE AUTO-CLOSING STATE GUARD
+  useEffect(() => {
+    if (gameStatus === 'finished') {
+      setShowLeaveWarning(false);
+    }
+  }, [gameStatus]);
+
   useEffect(() => {
     if (isAutoMode && lastDrawn && mySession?.grid && gameStatus === 'active') {
       const cellIndex = mySession.grid.indexOf(lastDrawn);
       if (cellIndex !== -1 && !daubed.has(cellIndex)) {
-        // Slight delay gives the player a moment to see the ball before the card instantly stamps
         const timer = setTimeout(() => {
           daubCell(cellIndex);
           try { if (isTelegram && haptic && typeof haptic.impact === 'function') haptic.impact('light'); } catch(e){}
@@ -141,6 +146,42 @@ export default function BingoGameBoard({ tgId }: Props) {
         )}
       </AnimatePresence>
 
+      {/* 🛡️ THE CLICK-TRAPPED MODAL */}
+      <AnimatePresence>
+        {showLeaveWarning && gameStatus !== 'finished' && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="absolute inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm touch-none"
+            onClick={() => setShowLeaveWarning(false)}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }} 
+              animate={{ scale: 1, y: 0 }} 
+              exit={{ scale: 0.9, opacity: 0 }} 
+              className="bg-white dark:bg-[#062416] w-full max-w-sm rounded-3xl p-6 shadow-2xl border border-red-500/30 text-center relative overflow-hidden"
+              onClick={(e) => e.stopPropagation()} 
+            >
+              <div className="absolute top-0 left-0 w-full h-2 bg-red-500"></div>
+              <div className="text-5xl mb-4 mt-2">⚠️</div>
+              <h3 className="text-2xl font-black text-red-600 dark:text-red-500 mb-2 uppercase tracking-widest">Forfeit Stake?</h3>
+              <p className="text-[#064E3B]/80 dark:text-white/70 text-sm mb-8 font-medium">
+                Your entry fee is already in the pot. Leaving now means abandoning your card and losing your chance to win.
+              </p>
+              <div className="flex flex-col gap-3">
+                <button onClick={() => setShowLeaveWarning(false)} className="w-full py-4 bg-green-500 hover:bg-green-600 text-white font-black rounded-xl transition-colors active:scale-95 uppercase tracking-widest shadow-[0_4px_15px_rgba(34,197,94,0.3)]">
+                  Stay in Game
+                </button>
+                <button onClick={leaveGame} className="w-full py-3 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 font-bold rounded-xl transition-colors border border-red-200 dark:border-red-900/50 active:scale-95">
+                  Forfeit & Leave
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <main className="flex-1 min-h-0 flex gap-2 p-2">
         <div className="w-[38%] bg-white dark:bg-[#0a4a2e] border border-[#22C55E]/30 dark:border-white/10 shadow-sm dark:shadow-none rounded-xl flex flex-col overflow-hidden p-1 transition-colors">
           <div className="flex w-full mb-1 shrink-0">
@@ -185,7 +226,6 @@ export default function BingoGameBoard({ tgId }: Props) {
                     <div className="absolute inset-0 bg-green-500/10 animate-pulse rounded" />
                     <div className="text-[10px] font-bold uppercase tracking-widest mb-1 text-[#064E3B]/50 dark:text-white/50">Current Call</div>
                     
-                    {/* 🚀 FIX: The Heavy Spring Jumbo Ball */}
                     <AnimatePresence mode="wait">
                       {lastDrawn ? (
                         <motion.div key={lastDrawn} 
@@ -211,7 +251,6 @@ export default function BingoGameBoard({ tgId }: Props) {
 
           <div className="flex-1 bg-white dark:bg-[#0a4a2e] border border-[#22C55E]/30 dark:border-white/10 shadow-sm dark:shadow-none rounded-xl p-1 sm:p-2 flex flex-col relative overflow-hidden transition-colors">
             
-            {/* 🚀 FIX: The Auto/Manual Control Switch */}
             <div className="flex justify-between items-center px-1 mb-1 shrink-0">
               <span className="text-[10px] text-[#064E3B]/50 dark:text-white/40 uppercase tracking-widest font-bold">Board #{mySession.card_index}</span>
               <button onClick={toggleAutoMode} className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[9px] font-bold uppercase tracking-widest transition-colors ${isAutoMode ? 'bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-300' : 'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400'}`}>
@@ -228,7 +267,6 @@ export default function BingoGameBoard({ tgId }: Props) {
                 const isDrawn = num !== 0 && drawnNumbers.includes(num);
                 const isClickable = isDrawn && !isDaubed && gameStatus === 'active';
                 
-                // 🚀 FIX: Hardcore Mode Visual Logic
                 const showPulse = isDrawn && !isDaubed && isAutoMode;
 
                 return (
@@ -238,7 +276,7 @@ export default function BingoGameBoard({ tgId }: Props) {
                         : isDaubed ? isWinLine ? 'bg-yellow-400 text-black shadow-[0_0_15px_rgba(250,204,21,0.6)] dark:shadow-[0_0_15px_rgba(250,204,21,0.8)] scale-105 z-10 ring-2 ring-white'
                                              : 'bg-green-500 text-white shadow-inner opacity-90'
                           : showPulse ? 'bg-white dark:bg-[#063320] border-2 border-green-500 dark:border-green-400 text-green-600 dark:text-green-300 cursor-pointer animate-pulse shadow-[inset_0_0_15px_rgba(34,197,94,0.15)] dark:shadow-[inset_0_0_15px_rgba(34,197,94,0.3)]'
-                          : isClickable ? 'bg-[#DCFCE7] dark:bg-[#062416] border border-[#22C55E]/20 dark:border-white/5 text-[#064E3B]/40 dark:text-white/40 cursor-pointer' // Hardcore mode drawn (Looks blank, but is clickable)
+                          : isClickable ? 'bg-[#DCFCE7] dark:bg-[#062416] border border-[#22C55E]/20 dark:border-white/5 text-[#064E3B]/40 dark:text-white/40 cursor-pointer'
                                     : 'bg-[#DCFCE7] dark:bg-[#062416] border border-[#22C55E]/20 dark:border-white/5 text-[#064E3B]/40 dark:text-white/40 cursor-default'
                       }`}
                   >
@@ -267,7 +305,7 @@ export default function BingoGameBoard({ tgId }: Props) {
           <button onClick={handleRefresh} className="flex-1 py-2.5 bg-white dark:bg-[#063320] hover:bg-[#F0FDF4] dark:hover:bg-[#0a4a2e] text-[#064E3B] dark:text-white/80 dark:hover:text-white rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-1 border border-[#22C55E]/30 dark:border-white/10 active:scale-95 shadow-sm dark:shadow-none">
             🔄 Refresh
           </button>
-          <button onClick={leaveGame} className="flex-1 py-2.5 bg-red-50 dark:bg-red-900/40 hover:bg-red-100 dark:hover:bg-red-900/70 text-red-600 dark:text-red-400 dark:hover:text-red-300 rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-1 border border-red-200 dark:border-red-900/50 active:scale-95 shadow-sm dark:shadow-none">
+          <button onClick={() => setShowLeaveWarning(true)} className="flex-1 py-2.5 bg-red-50 dark:bg-red-900/40 hover:bg-red-100 dark:hover:bg-red-900/70 text-red-600 dark:text-red-400 dark:hover:text-red-300 rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-1 border border-red-200 dark:border-red-900/50 active:scale-95 shadow-sm dark:shadow-none">
             🚪 Leave
           </button>
         </div>
