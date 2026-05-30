@@ -311,6 +311,7 @@ export default function BingoGameBoard({ tgId }: Props) {
         </div>
       </footer>
 
+      {/* 🚀 PHASE 4: THE UPGRADED FINISHED MODAL (Proof of Win) */}
       <AnimatePresence>
         {gameStatus === 'finished' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-white/90 dark:bg-black/95 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
@@ -327,9 +328,31 @@ export default function BingoGameBoard({ tgId }: Props) {
                 </>
               ) : (
                 <>
-                  <div className="text-6xl mb-4 opacity-50">💀</div>
-                  <h2 className="text-2xl font-black text-[#022C22]/60 dark:text-white/60 mb-2">Game Over</h2>
-                  <p className="text-[#064E3B]/60 dark:text-white/40 mb-8 text-sm px-4">An opponent called BINGO first. Better luck next time.</p>
+                  <div className="text-4xl mb-3 opacity-50">💀</div>
+                  <h2 className="text-xl font-black text-[#022C22]/80 dark:text-white/80 mb-1">Game Over</h2>
+                  <p className="text-[#064E3B]/60 dark:text-white/40 mb-6 text-xs px-2">An opponent matched a pattern first.</p>
+                  
+                  {/* 🚀 THE WINNER'S CARD SNAPSHOT MINI-GRID */}
+                  {currentRoom?.winning_card_snapshot && currentRoom.winning_card_snapshot.grid && (
+                    <div className="mb-6 bg-white dark:bg-[#042014] p-3 rounded-xl border border-[#22C55E]/20 dark:border-white/5 shadow-inner">
+                      <p className="text-[9px] text-[#064E3B]/50 dark:text-white/40 uppercase tracking-widest mb-2 font-black">Winning Card Proof</p>
+                      <div className="grid grid-cols-5 gap-1 max-w-[140px] mx-auto">
+                        {currentRoom.winning_card_snapshot.grid.map((num: number, idx: number) => {
+                          const isDaubed = currentRoom.winning_card_snapshot?.daubed?.includes(idx);
+                          const isFree = idx === 12;
+                          return (
+                            <div key={idx} className={`aspect-square flex items-center justify-center rounded-[3px] text-[8px] font-black transition-colors ${
+                              isFree ? 'bg-green-500 text-white shadow-inner' : 
+                              isDaubed ? 'bg-yellow-400 text-black shadow-[0_0_8px_rgba(250,204,21,0.5)]' : 
+                              'bg-[#F0FDF4] dark:bg-[#062416] text-[#064E3B]/30 dark:text-white/20 border border-[#22C55E]/10 dark:border-white/5'
+                            }`}>
+                              {isFree ? '★' : num}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
               <button onClick={leaveGame} className="w-full py-4 bg-[#DCFCE7] dark:bg-white/10 hover:bg-green-100 dark:hover:bg-white/20 text-[#064E3B] dark:text-white font-bold rounded-xl transition-colors border border-[#22C55E]/30 dark:border-white/10 touch-manipulation active:scale-95 shadow-sm dark:shadow-none">
