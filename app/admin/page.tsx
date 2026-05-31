@@ -3,10 +3,9 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabaseClient';
-import { useTelegram } from '@/lib/useTelegram';
 
-// 🛡️ THE VAULT KEYS (Add your partner's ID replacing the 000000000)
-const ALLOWED_ADMIN_IDS = [5681654051, 373753326 ];
+// 🔒 THE MASTER PASSWORD VAULT
+const MASTER_PASSWORD = "chelahebenki2026";
 
 type TimeScale = 'today' | 'week' | 'month' | 'all';
 
@@ -33,28 +32,20 @@ interface AdminStats {
 }
 
 export default function AdminDashboard() {
-  const { tgId, isTelegram } = useTelegram();
-  
-  const [isAuthenticating, setIsAuthenticating] = useState(true);
+  // 🔒 Password State
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [passInput, setPassInput] = useState('');
+  const [passError, setPassError] = useState(false);
+
   const [timeScale, setTimeScale] = useState<TimeScale>('today');
-  
   const [stats, setStats] = useState<DashboardStats>({ deposits: 0, withdrawals: 0, gamesHosted: 0, netFlow: 0 });
   const [macroStats, setMacroStats] = useState<AdminStats | null>(null);
   const [pendingTxs, setPendingTxs] = useState<Transaction[]>([]);
-  const [isLoadingData, setIsLoadingData] = useState(true);
+  const [isLoadingData, setIsLoadingData] = useState(false);
 
-  // 🛡️ AUTHENTICATION BOUNCER
+  // 📊 THE HYBRID ANALYTICS ENGINE (Only runs if unlocked!)
   useEffect(() => {
-    // Give the Telegram SDK 1.5 seconds to inject the ID before we permanently bounce them
-    const timer = setTimeout(() => setIsAuthenticating(false), 1500);
-    if (tgId) setIsAuthenticating(false);
-    return () => clearTimeout(timer);
-  }, [tgId]);
-
-  // 📊 THE HYBRID ANALYTICS ENGINE (RPC + Time-Scaled)
-  useEffect(() => {
-    // Only run queries if the current user is cryptographically authorized
-    if (!tgId || !ALLOWED_ADMIN_IDS.includes(tgId)) return;
+    if (!isUnlocked) return; // Do not fetch data if the vault is locked!
 
     const fetchDashboardData = async () => {
       setIsLoadingData(true);
@@ -119,7 +110,7 @@ export default function AdminDashboard() {
     fetchDashboardData();
     const interval = setInterval(fetchDashboardData, 15000); // Live refresh every 15s
     return () => clearInterval(interval);
-  }, [tgId, timeScale]);
+  }, [isUnlocked, timeScale]);
 
   // Helper: Format relative time
   const timeAgo = (dateStr: string) => {
@@ -130,29 +121,56 @@ export default function AdminDashboard() {
     return `${Math.floor(diff / 1440)}d ago`;
   };
 
-  // ==========================================
-  // RENDER: AUTHENTICATING (Silent Buffer)
-  // ==========================================
-  if (isAuthenticating) {
-    return <div className="min-h-screen bg-[#02120b]" />; 
-  }
+  // Password Unlock Handler
+  const handleUnlock = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passInput === MASTER_PASSWORD) {
+      setIsUnlocked(true);
+    } else {
+      setPassError(true);
+      setTimeout(() => setPassError(false), 2000);
+    }
+  };
 
   // ==========================================
-  // RENDER: STEALTH BOUNCER (Looks like a 404)
+  // RENDER 1: THE PASSWORD LOCK SCREEN
   // ==========================================
-  if (!tgId || !ALLOWED_ADMIN_IDS.includes(tgId)) {
+  if (!isUnlocked) {
     return (
-      <div className="min-h-screen bg-[#F0FDF4] dark:bg-[#02120b] flex flex-col items-center justify-center font-sans">
-        <div className="text-center">
-          <h1 className="text-4xl font-black text-[#022C22] dark:text-white mb-2 tracking-tight">404</h1>
-          <p className="text-[#064E3B]/60 dark:text-white/60 text-sm font-bold uppercase tracking-widest">Page Not Found</p>
+      <div className="min-h-screen bg-[#050505] flex items-center justify-center p-4 font-mono">
+        <div className="bg-neutral-900 border border-neutral-800 p-8 rounded-3xl w-full max-w-sm text-center shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500"></div>
+          
+          <div className="w-16 h-16 bg-neutral-950 border border-neutral-800 rounded-full mx-auto mb-6 flex items-center justify-center shadow-inner">
+            <span className="text-2xl opacity-80">🔐</span>
+          </div>
+          
+          <h1 className="text-xl font-black tracking-widest text-white uppercase mb-2">Restricted Access</h1>
+          <p className="text-neutral-500 text-xs mb-8">Enter authorization code to proceed.</p>
+          
+          <form onSubmit={handleUnlock} className="flex flex-col gap-4">
+            <input 
+              type="password" 
+              value={passInput}
+              onChange={(e) => setPassInput(e.target.value)}
+              placeholder="••••••••"
+              className={`w-full bg-neutral-950 border ${passError ? 'border-red-500 text-red-500' : 'border-neutral-800 text-emerald-400'} rounded-xl px-4 py-3 text-center tracking-[0.3em] font-black focus:outline-none focus:border-emerald-500 transition-colors`}
+              autoFocus
+            />
+            <button 
+              type="submit"
+              className={`w-full py-3 rounded-xl font-black tracking-widest uppercase transition-all ${passError ? 'bg-red-500 text-white' : 'bg-emerald-500 text-black hover:bg-emerald-400 active:scale-95'}`}
+            >
+              {passError ? 'DENIED' : 'DECRYPT'}
+            </button>
+          </form>
         </div>
       </div>
     );
   }
 
   // ==========================================
-  // RENDER: SECURE DASHBOARD
+  // RENDER 2: SECURE DASHBOARD
   // ==========================================
   return (
     <div className="min-h-screen bg-[#050505] text-neutral-100 p-4 md:p-8 font-mono overflow-y-auto">
@@ -169,7 +187,7 @@ export default function AdminDashboard() {
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
               <span className="text-emerald-500 text-[10px] font-black tracking-widest">SYSTEM ONLINE</span>
             </div>
-            <span className="text-[9px] text-neutral-600 tracking-widest">ID: {tgId}</span>
+            <span className="text-[9px] text-neutral-600 tracking-widest">AUTHORIZED DEVICE</span>
           </div>
         </header>
 
