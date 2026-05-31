@@ -4,7 +4,7 @@ CHELA Bingo - Telegram Bot
 Handles: /start → Language Selection → Contact Registration → Play, Deposit, Withdraw, Balance.
 Bilingual Support: English & Amharic (አማርኛ)
 Automated Verification: Integrated with verify.leul.et API
-Security: Bulletproof Double-Spend Prevention via Supabase
+Security: Bulletproof Optimistic Locking & Double-Spend Prevention
 """
 
 import os
@@ -51,7 +51,7 @@ if not BOT_TOKEN or BOT_TOKEN == "your_bot_token_here":
     raise RuntimeError("TELEGRAM_BOT_TOKEN is not set in .env")
 
 # ---------------------------------------------------------------------------
-# SUPABASE CLIENT
+# SUPABASE CLIENT & SECURITY LOCKING
 # ---------------------------------------------------------------------------
 _supabase = None
 if SUPABASE_URL and SUPABASE_SERVICE_KEY:
@@ -84,30 +84,30 @@ def _is_user_registered(tg_id: int) -> bool:
     except Exception:
         return False
 
-def _is_transaction_used(txn_id: str) -> bool:
-    """Checks if the transaction ID already exists in the used_transactions table."""
+# 🚀 FIX: Optimistic Locking System
+def _reserve_transaction(txn_id: str, tg_id: int, amount: float) -> bool:
+    """Attempts to lock the transaction in the database BEFORE API verification to prevent race conditions."""
     if _supabase is None:
-        return False
-    try:
-        result = _supabase.table("used_transactions").select("txn_id").eq("txn_id", txn_id).maybe_single().execute()
-        if result and hasattr(result, 'data') and result.data is not None:
-            return True
-        return False
-    except Exception:
-        return False
-
-def _mark_transaction_used(txn_id: str, tg_id: int, amount: float):
-    """Saves the transaction ID so it can never be used again."""
-    if _supabase is None:
-        return
+        return True # Bypass lock if running in local test mode without DB
     try:
         _supabase.table("used_transactions").insert({
             "txn_id": txn_id,
             "tg_id": tg_id,
             "amount": amount
         }).execute()
+        return True # Successfully locked
+    except Exception:
+        # If insertion fails, it means the Primary Key (txn_id) already exists. Fraud detected.
+        return False
+
+def _release_transaction(txn_id: str):
+    """Releases the lock if the API verification fails, allowing the user to try again."""
+    if _supabase is None:
+        return
+    try:
+        _supabase.table("used_transactions").delete().eq("txn_id", txn_id).execute()
     except Exception as e:
-        print(f"Failed to record used transaction: {e}")
+        print(f"Failed to release transaction lock: {e}")
 
 # ---------------------------------------------------------------------------
 # AUTO-TUNNEL (For Local Testing Only)
@@ -142,7 +142,6 @@ if not MINI_APP_URL or "your-deployed-url" in MINI_APP_URL:
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 bot.delete_webhook(drop_pending_updates=True)
 
-# 🚀 BUILD PERSISTENT POPUP COMMAND MENU (Ordered by Necessity)
 try:
     bot.set_my_commands([
         BotCommand("play", "Launch Bingo / ጨዋታ ጀምር"),
@@ -206,7 +205,7 @@ STRINGS = {
         "api_success": "🎉 *Deposit Automated Successfully!*\nYour account has been credited with `{:.2f} ETB`.",
         "api_wrong_amount": "⚠️ *Verification Alert:*\nTransaction found, but the amount paid does not match your initiated request.",
         "api_fail": "❌ *Verification Failed:*\nInvalid Transaction ID or the reference has expired/already been processed.",
-        "api_used": "🚨 *Fraud Alert:*\nThis Transaction ID has already been used and credited to an account. Double-spending is not allowed.",
+        "api_used": "🚨 *Fraud Alert:*\nThis Transaction ID is currently processing or has already been credited. Double-spending is not allowed.",
         "api_error": "🚨 *System Error:*\nBank verification services are currently experiencing delays. Please try again later.",
         "inst_telebirr": "📱 *TELEBIRR PAYMENT INSTRUCTIONS*\n\n1️⃣ Open your Telebirr App or dial `*127#`.\n2️⃣ Send the amount of *{} ETB* to Merchant/Agent Number: *894921*\n3️⃣ Once completed, copy the **Transaction ID** (e.g. `4HF89SDF93`) or paste the full confirmation SMS text here:",
         "inst_cbe": "🏦 *CBE PAYMENT INSTRUCTIONS*\n\n1️⃣ Use CBE Birr, CBE Mobile Banking App or ATM.\n2️⃣ Transfer *{} ETB* to Account Number: *1000481948212* (CHELA ENT.)\n3️⃣ Copy the **Transaction Ref** (e.g. `FT26XXXXXXXX`) or paste the full credit SMS confirmation directly here:",
@@ -337,7 +336,6 @@ def cmd_start(message):
     chat_id = message.chat.id
     set_state(chat_id, STATE_IDLE)
     
-    # 🚀 FIX: Memory Check. Skip language pop-up if already registered
     if _is_user_registered(message.from_user.id):
         lang = get_lang(chat_id)
         bot.send_message(
@@ -357,7 +355,6 @@ def cmd_play(message):
     chat_id = message.chat.id
     lang = get_lang(chat_id)
     
-    # Send a standalone button strictly for launching the game
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton(STRINGS[lang]["play_btn"], web_app=WebAppInfo(url=MINI_APP_URL)))
     
@@ -371,7 +368,6 @@ def cmd_play(message):
 def cmd_invite(message):
     chat_id = message.chat.id
     lang = get_lang(chat_id)
-    # Using their TG ID as the referral code suffix
     bot.send_message(
         chat_id, 
         STRINGS[lang]["invite_msg"].format(message.from_user.id)
@@ -613,8 +609,11 @@ def handle_text(message):
         set_state(chat_id, STATE_IDLE)
         
         clean_txn_id = _extract_transaction_id(text)
+        dep_info = user_deposit_data.get(chat_id, {"provider": "telebirr", "amount": 0.0})
+        expected_amount = float(dep_info.get("amount", 0.0))
         
-        if _is_transaction_used(clean_txn_id):
+        # Lock the transaction immediately to prevent spam-click exploits
+        if not _reserve_transaction(clean_txn_id, message.from_user.id, expected_amount):
             bot.send_message(
                 chat_id, 
                 STRINGS[lang]["api_used"], 
@@ -626,9 +625,6 @@ def handle_text(message):
                 reply_markup=main_menu_markup(lang)
             )
             return
-
-        dep_info = user_deposit_data.get(chat_id, {"provider": "telebirr", "amount": 0.0})
-        expected_amount = float(dep_info.get("amount", 0.0))
 
         suffix_val = None
         text_parts = text.split()
@@ -659,7 +655,6 @@ def handle_text(message):
                     
                     if _supabase is not None:
                         _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
-                        _mark_transaction_used(clean_txn_id, message.from_user.id, verified_amount)
 
                     bot.delete_message(chat_id, wait_msg.message_id)
                     bot.send_message(
@@ -676,6 +671,8 @@ def handle_text(message):
                     except Exception:
                         pass
                 else:
+                    # Amounts didn't match. Release the lock so the user isn't punished.
+                    _release_transaction(clean_txn_id)
                     bot.delete_message(chat_id, wait_msg.message_id)
                     bot.send_message(
                         chat_id, 
@@ -683,6 +680,8 @@ def handle_text(message):
                         reply_markup=remove_keyboard()
                     )
             else:
+                # API rejected the ID. Release the lock.
+                _release_transaction(clean_txn_id)
                 bot.delete_message(chat_id, wait_msg.message_id)
                 bot.send_message(
                     chat_id, 
@@ -692,6 +691,8 @@ def handle_text(message):
 
         except Exception as e:
             print(f"API Error: {e}")
+            # Server timeout. Release the lock so they can try again.
+            _release_transaction(clean_txn_id)
             bot.delete_message(chat_id, wait_msg.message_id)
             bot.send_message(
                 chat_id, 
