@@ -4,7 +4,7 @@ CHELA Bingo - Telegram Bot
 Handles: /start → Language Selection → Contact Registration → Play, Deposit, Withdraw, Balance.
 Bilingual Support: English & Amharic (አማርኛ)
 Automated Verification: Integrated with verify.leul.et API
-Security: Bulletproof Optimistic Locking & Double-Spend Prevention
+Security: Bulletproof Optimistic Locking, Destination Validation, & Fail-Closed Logic
 """
 
 import os
@@ -35,9 +35,25 @@ SUPABASE_SERVICE_KEY  = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 VERIFIER_API_KEY      = os.getenv("VERIFIER_API_KEY", "")
 
 # ---------------------------------------------------------------------------
+# 🛡️ THE DESTINATION CHECKER (SECURITY SETTINGS)
+# ---------------------------------------------------------------------------
+# Replace these with your exact official names registered to Telebirr/CBE
+VALID_MERCHANT_NAMES = [
+    "FERIHIWOT SHAWOLE",
+    "CHELA ENT"
+]
+
+# Replace these with your exact Telebirr, CBE, or Dashen account numbers
+VALID_MERCHANT_ACCOUNTS = [
+    "894921",           
+    "1000481948212",    
+    "0965434354"        
+]
+
+# ---------------------------------------------------------------------------
 # ADMIN AUTHORIZATION
 # ---------------------------------------------------------------------------
-ADMIN_IDS = [5681654051]  # Henok
+ADMIN_IDS = [5681654051]  # IMPORTANT: Change this to your exact Telegram ID
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
@@ -84,11 +100,12 @@ def _is_user_registered(tg_id: int) -> bool:
     except Exception:
         return False
 
-# 🚀 FIX: Optimistic Locking System
+# 🚀 FAIL-CLOSED OPTIMISTIC LOCKING SYSTEM
 def _reserve_transaction(txn_id: str, tg_id: int, amount: float) -> bool:
     """Attempts to lock the transaction in the database BEFORE API verification to prevent race conditions."""
     if _supabase is None:
-        return True # Bypass lock if running in local test mode without DB
+        # SECURITY: Fail-Closed. If DB is down, reject everything to protect funds.
+        return False 
     try:
         _supabase.table("used_transactions").insert({
             "txn_id": txn_id,
@@ -120,7 +137,7 @@ def _start_tunnel(port: int = 3000) -> str:
     _tunnel_proc = subprocess.Popen(["npx", "localtunnel", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
     url = None
     for line in _tunnel_proc.stdout:
-        match = re.search(r"your url is:\s*(https://\S+)", line)
+        match = re.search(r"your url is:\s*(https://S+)", line)
         if match:
             url = match.group(1).strip()
             break
@@ -207,10 +224,11 @@ STRINGS = {
         "api_fail": "❌ *Verification Failed:*\nInvalid Transaction ID or the reference has expired/already been processed.",
         "api_used": "🚨 *Fraud Alert:*\nThis Transaction ID is currently processing or has already been credited. Double-spending is not allowed.",
         "api_error": "🚨 *System Error:*\nBank verification services are currently experiencing delays. Please try again later.",
-        "inst_telebirr": "📱 *TELEBIRR PAYMENT INSTRUCTIONS*\n\n1️⃣ Open your Telebirr App or dial `*127#`.\n2️⃣ Send the amount of *{} ETB* to Merchant/Agent Number: *894921*\n3️⃣ Once completed, copy the **Transaction ID** (e.g. `4HF89SDF93`) or paste the full confirmation SMS text here:",
-        "inst_cbe": "🏦 *CBE PAYMENT INSTRUCTIONS*\n\n1️⃣ Use CBE Birr, CBE Mobile Banking App or ATM.\n2️⃣ Transfer *{} ETB* to Account Number: *1000481948212* (CHELA ENT.)\n3️⃣ Copy the **Transaction Ref** (e.g. `FT26XXXXXXXX`) or paste the full credit SMS confirmation directly here:",
         "invite_msg": "🎁 *Invite Friends & Earn!*\n\nShare this bot with your friends and earn rewards when they play.\n\nYour Invite Link:\n`https://t.me/ChelaBingoBot?start={}`",
-        "support_msg": "🎧 *CHELA Bingo Support*\n\nNeed help with a deposit, withdrawal, or a game issue? Our team is here 24/7.\n\nContact us directly: @ChelaSupport"
+        "support_msg": "🎧 *CHELA Bingo Support*\n\nNeed help with a deposit, withdrawal, or a game issue? Our team is here 24/7.\n\nContact us directly: @ChelaSupport",
+        # 🟢 UPDATED: HTML Blockquote format for beautiful UI
+        "inst_telebirr": "Telebirr Account\n\n<code>894921</code>\n\n<blockquote>1. Send {} ETB to the Telebirr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from Telebirr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the Telebirr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
+        "inst_cbe": "CBE Account\n\n<code>1000481948212</code>\n\n<blockquote>1. Send {} ETB to the CBE account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from the bank containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the CBE account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
     },
     "am": {
         "welcome_back": "🎱 *ቼላ ቢንጎ (CHELA Bingo)*\n\nወደ መጫወቻው አዳራሽ በደህና መጡ! ምዝገባዎ ተጠናቋል።\n\n• የቢንጎ መተግበሪያውን ለመክፈት *PLAY CHELA BINGO* የሚለውን ይጫኑ።\n• ሂሳብዎን ከታች ባለው መቆጣጠሪያ ማስተዳደር ይችላሉ።",
@@ -238,15 +256,16 @@ STRINGS = {
         "api_fail": "❌ *ማረጋገጫው አልተሳካም:*\nየግብይት መለያ ቁጥሩ የተሳሳተ ነው ወይም ከዚህ በፊት ጥቅም ላይ ውሏል።",
         "api_used": "🚨 *የማጭበርበር ሙከራ:*\nይህ የግብይት መለያ ቁጥር ከዚህ በፊት ጥቅም ላይ ውሏል። አንድን ደረሰኝ ደጋግሞ መጠቀም አይቻልም።",
         "api_error": "🚨 *የስርዓት መቆራረጥ:*\nየባንክ ማረጋገጫ መስመሮች ስራ በዝቶባቸዋል። እባክዎ ከጥቂት ደቂቃዎች በኋላ እንደገና ይሞክሩ።",
-        "inst_telebirr": "📱 *የቴሌብር ክፍያ መመሪያ*\n\n1️⃣ የቴሌብር መተግበሪያዎን ይክፈቱ ወይም `*127#` ይደውሉ።\n2️⃣ የክፍያ መጠን *{} ETB* ወደ መለያ ቁጥር (Merchant/Agent): *894921* ይላኩ።\n3️⃣ ክፍያውን ሲያጠናቅቁ የነጋዴውን **የግብይት መለያ ቁጥር (Transaction ID)** (ምሳሌ፦ `4HF89SDF93`) ይቅዱ ወይም ሙሉውን የኤስኤምኤስ (SMS) መልእክት እዚህ ይላኩ፦",
-        "inst_cbe": "🏦 *የኢትዮጵያ ንግድ ባንክ (CBE) ክፍያ መመሪያ*\n\n1️⃣ የCBE Birr፣ የCBE ሞባይል ባንኪንግ መተግበሪያን ወይም ኤቲኤምን ይጠቀሙ።\n2️⃣ የክፍያ መጠን *{} ETB* ወደ ሂሳብ ቁጥር: *1000481948212* (CHELA ENT.) ያስተላልፉ።\n3️⃣ የክፍያ ማረጋገጫ **የግብይት መለያ ቁጥር (Transaction Ref)** (ምሳሌ፦ `FT26XXXXXXXX`) ይቅዱ ወይም ሙሉውን የደረሰኝ ኤስኤምኤስ በቀጥታ እዚህ ይላኩ፦",
         "invite_msg": "🎁 *ጓደኞችዎን ይጋብዙ!*\n\nይህን ቦት ለጓደኞችዎ በማጋራት ሲጫወቱ ሽልማቶችን ያግኙ።\n\nየመጋበዣ ሊንክዎ:\n`https://t.me/ChelaBingoBot?start={}`",
-        "support_msg": "🎧 *የቼላ ቢንጎ ድጋፍ ማዕከል*\n\nስለ ክፍያ፣ ገንዘብ ማውጣት ወይም ጨዋታ እርዳታ ይፈልጋሉ? ቡድናችን 24/7 ዝግጁ ነው።\n\nያነጋግሩን: @ChelaSupport"
+        "support_msg": "🎧 *የቼላ ቢንጎ ድጋፍ ማዕከል*\n\nስለ ክፍያ፣ ገንዘብ ማውጣት ወይም ጨዋታ እርዳታ ይፈልጋሉ? ቡድናችን 24/7 ዝግጁ ነው።\n\nያነጋግሩን: @ChelaSupport",
+        # 🟢 UPDATED: HTML Blockquote format based explicitly on the screenshot text
+        "inst_telebirr": "የቴሌብር አካውንት\n\n<code>894921</code>\n\n<blockquote>1. ከላይ ባለው የቴሌብር አካውንት {}ብር ያስገቡ\n\n2. የምትልኩት የገንዘብ መጠን እና እዚ ላይ እንዲሞላልዎ የምትፈልጉት የብር መጠን ተመሳሳይ መሆኑን እርግጠኛ ይሁኑ\n\n3. ብሩን ስትልኩ የከፈላችሁበትን መረጃ የያዘ አጭር የፅሁፍ መልክት(sms) ከቴሌብር ይደርስዎታል\n\n4. የደረሳችሁን አጭር የፅሁፍ መልክት(sms) ሙሉዉን ኮፒ(copy) በማረግ ከታች ባለው የቴሌግራም የፅሁፍ ማሰፈሪያው ላይ ፔስት(paste) በማረግ ይላኩት\n\nማሳሰቢያ፡ ዲፓዚት ባረጉ ቁጥር ቦቱ የሚያገናኛቹ ኤጀንቶች ስለሚለየው ከላይ ወደሚሰጠው የቴሌብር አካውንት ብቻ ብር መላካችሁን እርግጠኛ ይሁኑ:: ዲፓዚት ስታረጉ ቦቱ ከሚያገናኛቹ ኤጀንት ውጪ ወደ ሌላ ኤጀንት ብር ከላካቹ ቦቱ 2% ቆርጦ ይልክላችኋል::</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
+        "inst_cbe": "የኢትዮጵያ ንግድ ባንክ (CBE) አካውንት\n\n<code>1000481948212</code>\n\n<blockquote>1. ከላይ ባለው የኢትዮጵያ ንግድ ባንክ አካውንት {}ብር ያስገቡ\n\n2. የምትልኩት የገንዘብ መጠን እና እዚ ላይ እንዲሞላልዎ የምትፈልጉት የብር መጠን ተመሳሳይ መሆኑን እርግጠኛ ይሁኑ\n\n3. ብሩን ስትልኩ የከፈላችሁበትን መረጃ የያዘ አጭር የፅሁፍ መልክት(sms) ከባንኩ ይደርስዎታል\n\n4. የደረሳችሁን አጭር የፅሁፍ መልክት(sms) ሙሉዉን ኮፒ(copy) በማረግ ከታች ባለው የቴሌግራም የፅሁፍ ማሰፈሪያው ላይ ፔስት(paste) በማረግ ይላኩት\n\nማሳሰቢያ፡ ዲፓዚት ባረጉ ቁጥር ቦቱ የሚያገናኛቹ ኤጀንቶች ስለሚለየው ከላይ ወደሚሰጠው የባንክ አካውንት ብቻ ብር መላካችሁን እርግጠኛ ይሁኑ:: ዲፓዚት ስታረጉ ቦቱ ከሚያገናኛቹ ኤጀንት ውጪ ወደ ሌላ ኤጀንት ብር ከላካቹ ቦቱ 2% ቆርጦ ይልክላችኋል::</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
     }
 }
 
 # ---------------------------------------------------------------------------
-# MARKUPS WITH BILINGUAL FACTORY
+# MARKUPS 
 # ---------------------------------------------------------------------------
 def lang_selection_markup() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
@@ -555,17 +574,19 @@ def handle_callback(call):
         
         set_state(chat_id, STATE_AWAITING_TXN_SMS)
         
+        # 🟢 HTML FORMATTING ISOLATION: Parses only the instruction message to build the beautiful UI
         if provider == "telebirr":
             inst_txt = STRINGS[lang]["inst_telebirr"].format(amount)
         elif provider == "cbe":
             inst_txt = STRINGS[lang]["inst_cbe"].format(amount)
         else:
-            inst_txt = f"⚙️ *{provider.upper()} DEPOSIT INSTRUCTION*\n\nPlease transfer *{amount} ETB* to our verified account system and paste the receipt details directly below:"
+            inst_txt = f"⚙️ <b>{provider.upper()} DEPOSIT INSTRUCTION</b>\n\nPlease transfer <b>{amount} ETB</b> to our verified account system and paste the receipt details directly below:"
 
         bot.send_message(
             chat_id, 
             inst_txt, 
-            reply_markup=cancel_reply_keyboard(lang)
+            reply_markup=cancel_reply_keyboard(lang),
+            parse_mode="HTML"  # <--- Triggers the Telegram blockquote and copyable font feature
         )
 
     elif data == "action_withdraw":
@@ -581,7 +602,7 @@ def handle_callback(call):
         bot.answer_callback_query(call.id)
 
 # ---------------------------------------------------------------------------
-# STATE MACHINE (TEXT HANDLER & LIVE VERIFICATION)
+# STATE MACHINE & SECURE VERIFICATION ROUTING
 # ---------------------------------------------------------------------------
 @bot.message_handler(func=lambda m: m.content_type == "text" and not m.text.startswith("/"))
 def handle_text(message):
@@ -604,7 +625,7 @@ def handle_text(message):
         )
         return
 
-    # 🚀 AUTOMATED BANK VERIFICATION ENGINE
+    # 🚀 SECURE AUTOMATED VERIFICATION ENGINE
     if state == STATE_AWAITING_TXN_SMS:
         set_state(chat_id, STATE_IDLE)
         
@@ -612,7 +633,7 @@ def handle_text(message):
         dep_info = user_deposit_data.get(chat_id, {"provider": "telebirr", "amount": 0.0})
         expected_amount = float(dep_info.get("amount", 0.0))
         
-        # Lock the transaction immediately to prevent spam-click exploits
+        # 1. OPTIMISTIC LOCKING
         if not _reserve_transaction(clean_txn_id, message.from_user.id, expected_amount):
             bot.send_message(
                 chat_id, 
@@ -648,7 +669,40 @@ def handle_text(message):
 
             if api_data.get("success"):
                 verified_amount = float(api_data.get("transactionAmount", api_data.get("total", 0.0)))
+                receiver_name = str(api_data.get("receiverName", "")).upper()
+                
+                # Convert the entire API response to a string to easily search for account numbers 
+                api_response_string = str(api_data).replace(" ", "")
+                
+                # 2. DESTINATION ACCOUNT VALIDATION (Name OR Account Number)
+                is_valid_destination = False
+                
+                # First, check if the account number is anywhere on the receipt
+                for valid_account in VALID_MERCHANT_ACCOUNTS:
+                    if valid_account in api_response_string:
+                        is_valid_destination = True
+                        break
+                
+                # Second, check if the name matches (as a backup)
+                if not is_valid_destination:
+                    for valid_name in VALID_MERCHANT_NAMES:
+                        if valid_name.upper() in receiver_name:
+                            is_valid_destination = True
+                            break
+                
+                # If neither the name nor the account number belongs to you, reject it!
+                if not is_valid_destination:
+                    _release_transaction(clean_txn_id)
+                    bot.delete_message(chat_id, wait_msg.message_id)
+                    bot.send_message(
+                        chat_id, 
+                        f"🚨 *Destination Mismatch:*\nThe receipt is valid, but the funds were sent to an unauthorized account or person. This deposit cannot be accepted.", 
+                        reply_markup=remove_keyboard()
+                    )
+                    bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
+                    return
 
+                # 3. AMOUNT VALIDATION
                 if verified_amount >= expected_amount:
                     current_balance = _get_user_balance(message.from_user.id)
                     new_balance = current_balance + verified_amount
@@ -671,7 +725,6 @@ def handle_text(message):
                     except Exception:
                         pass
                 else:
-                    # Amounts didn't match. Release the lock so the user isn't punished.
                     _release_transaction(clean_txn_id)
                     bot.delete_message(chat_id, wait_msg.message_id)
                     bot.send_message(
@@ -680,7 +733,6 @@ def handle_text(message):
                         reply_markup=remove_keyboard()
                     )
             else:
-                # API rejected the ID. Release the lock.
                 _release_transaction(clean_txn_id)
                 bot.delete_message(chat_id, wait_msg.message_id)
                 bot.send_message(
@@ -691,7 +743,6 @@ def handle_text(message):
 
         except Exception as e:
             print(f"API Error: {e}")
-            # Server timeout. Release the lock so they can try again.
             _release_transaction(clean_txn_id)
             bot.delete_message(chat_id, wait_msg.message_id)
             bot.send_message(
@@ -728,17 +779,19 @@ def handle_text(message):
             
             set_state(chat_id, STATE_AWAITING_TXN_SMS)
             
+            # 🟢 HTML FORMATTING ISOLATION: Parses only the instruction message to build the beautiful UI
             if provider == "telebirr":
                 inst_txt = STRINGS[lang]["inst_telebirr"].format(amount)
             elif provider == "cbe":
                 inst_txt = STRINGS[lang]["inst_cbe"].format(amount)
             else:
-                inst_txt = f"⚙️ *{provider.upper()} DEPOSIT INSTRUCTION*\n\nPlease transfer *{amount} ETB* to our verified account system and paste the receipt details directly below:"
+                inst_txt = f"⚙️ <b>{provider.upper()} DEPOSIT INSTRUCTION</b>\n\nPlease transfer <b>{amount} ETB</b> to our verified account system and paste the receipt details directly below:"
 
             bot.send_message(
                 chat_id, 
                 inst_txt, 
-                reply_markup=cancel_reply_keyboard(lang)
+                reply_markup=cancel_reply_keyboard(lang),
+                parse_mode="HTML"  # <--- Triggers the Telegram blockquote and copyable font feature
             )
 
         elif state == STATE_AWAITING_WITHDRAW:
