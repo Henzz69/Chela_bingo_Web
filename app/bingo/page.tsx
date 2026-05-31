@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useBingoStore } from '@/store/bingoStore';
 import { useTelegram } from '@/lib/useTelegram';
-import { supabase } from '@/lib/supabaseClient'; // 🚀 FIX: Imported global client to stop console spam
+import { supabase } from '@/lib/supabaseClient';
 import BingoGameBoard from './GameBoard';
 import BingoCardSelection from './CardSelection';
 
@@ -17,6 +17,100 @@ const STAKE_OPTIONS = [
   { label: '100 ETB', amount: 100, players: 100, maxPrize: 8000 },
 ];
 
+// 🚀 PHASE 1: COMPONENT ISOLATION (Zero Main-Thread Bloat)
+function GameHistoryLogs({ tgId }: { tgId: number }) {
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(true);
+
+  // 🚀 PHASE 2 & 3: THE UPGRADED ENRICHED QUERY
+  useEffect(() => {
+    const fetchHistory = async () => {
+      if (!tgId) return;
+      setLoadingLogs(true);
+      try {
+        const { data: cardsData, error: cardsError } = await supabase
+          .from('bingo_cards')
+          .select('room_id, created_at, win_claimed, payout_amount')
+          .eq('tg_id', tgId)
+          .order('created_at', { ascending: false })
+          .limit(15);
+
+        if (cardsError) throw cardsError;
+
+        if (cardsData && cardsData.length > 0) {
+          const roomIds = [...new Set(cardsData.map(c => c.room_id))];
+          const { data: roomsData, error: roomsError } = await supabase
+            .from('bingo_rooms')
+            .select('id, entry_fee')
+            .in('id', roomIds);
+
+          if (roomsError) throw roomsError;
+
+          const roomFeeMap: Record<string, number> = {};
+          roomsData?.forEach(r => { roomFeeMap[r.id] = r.entry_fee; });
+
+          const formattedLogs = cardsData.map((entry: any) => ({
+            id: entry.room_id.substring(0, 6).toUpperCase(),
+            stake: roomFeeMap[entry.room_id] || 10,
+            date: new Date(entry.created_at).toLocaleDateString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            won: entry.win_claimed,
+            payout: entry.payout_amount || 0
+          }));
+
+          setLogs(formattedLogs);
+        } else {
+          setLogs([]);
+        }
+      } catch (err) { 
+        console.error("Failed to sync history:", err); 
+      } finally { 
+        setLoadingLogs(false); 
+      }
+    };
+    
+    fetchHistory();
+  }, [tgId]);
+
+  return (
+    <motion.div key="logs-tab" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-3 pt-4">
+      <h2 className="text-xl font-black mb-2">My Game History</h2>
+      {loadingLogs ? (
+        <div className="text-center py-10 text-green-500 dark:text-green-400 animate-pulse font-bold">Syncing Records...</div>
+      ) : logs.length === 0 ? (
+        <div className="text-center py-10 text-[#064E3B]/60 dark:text-white/40 bg-white dark:bg-[#062416] rounded-xl border border-[#22C55E]/30 dark:border-white/5 shadow-sm dark:shadow-none font-medium">No games played yet.</div>
+      ) : (
+        logs.map((log, idx) => (
+          // 🚀 PHASE 4: PREMIUM BINARY STYLING
+          <div key={idx} className={`bg-white dark:bg-[#062416] border ${log.won ? 'border-yellow-400 dark:border-yellow-500/50 shadow-[0_0_15px_rgba(250,204,21,0.15)]' : 'border-[#22C55E]/20 dark:border-white/5 opacity-80'} rounded-xl p-4 flex justify-between items-center shadow-sm dark:shadow-none transition-colors`}>
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-black">Room #{log.id}</span>
+                {log.won ? (
+                  <span className="bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 text-[9px] font-black px-2 py-0.5 rounded-full tracking-wider uppercase border border-yellow-300 dark:border-yellow-500/30">Won</span>
+                ) : (
+                  <span className="bg-[#F0FDF4] dark:bg-white/5 text-[#064E3B]/60 dark:text-white/40 text-[9px] font-bold px-2 py-0.5 rounded-full tracking-wider uppercase border border-[#22C55E]/20 dark:border-white/10">Lost</span>
+                )}
+              </div>
+              <div className="text-xs text-[#064E3B]/60 dark:text-white/40 font-medium">{log.date}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[9px] text-[#064E3B]/50 dark:text-white/40 uppercase tracking-widest mb-0.5 font-bold">Stake: {log.stake} ETB</div>
+              {log.won ? (
+                <div className="text-sm font-black text-green-600 dark:text-green-400 drop-shadow-sm">+{log.payout} ETB</div>
+              ) : (
+                <div className="text-sm font-bold text-[#064E3B]/40 dark:text-white/30">-{log.stake} ETB</div>
+              )}
+            </div>
+          </div>
+        ))
+      )}
+    </motion.div>
+  );
+}
+
+// ============================================================================
+// MAIN PAGE COMPONENT
+// ============================================================================
 export default function BingoPage() {
   const { tgId, isTelegram, haptic } = useTelegram();
   const { screen, fetchRooms, isRecovering, recoverSession, loadingRooms, theme, toggleTheme } = useBingoStore();
@@ -27,10 +121,8 @@ export default function BingoPage() {
 
   const [wallet, setWallet] = useState<WalletData | null>(null);
   const [walletLoading, setWalletLoading] = useState(false);
-  const [logs, setLogs] = useState<any[]>([]);
-  const [loadingLogs, setLoadingLogs] = useState(true);
 
-  // 🚀 THE ULTIMATE THEME ENGINE: Forcefully commands the DOM to switch
+  // 🚀 THE ULTIMATE THEME ENGINE
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const root = document.documentElement;
@@ -59,53 +151,6 @@ export default function BingoPage() {
   useEffect(() => {
     if (screen === 'lobby') fetchRooms();
   }, [screen, fetchRooms]);
-
-  // 🚀 FIX: Decoupled two-step query bypassing strict Foreign Key requirements
-  useEffect(() => {
-    const fetchHistory = async () => {
-      if (!tgId) return;
-      setLoadingLogs(true);
-      try {
-        const { data: cardsData, error: cardsError } = await supabase
-          .from('bingo_cards')
-          .select('room_id, created_at')
-          .eq('tg_id', tgId)
-          .order('created_at', { ascending: false })
-          .limit(15);
-
-        if (cardsError) throw cardsError;
-
-        if (cardsData && cardsData.length > 0) {
-          const roomIds = [...new Set(cardsData.map(c => c.room_id))];
-          const { data: roomsData, error: roomsError } = await supabase
-            .from('bingo_rooms')
-            .select('id, entry_fee')
-            .in('id', roomIds);
-
-          if (roomsError) throw roomsError;
-
-          const roomFeeMap: Record<string, number> = {};
-          roomsData?.forEach(r => { roomFeeMap[r.id] = r.entry_fee; });
-
-          const formattedLogs = cardsData.map((entry: any) => ({
-            id: entry.room_id.substring(0, 8).toUpperCase(),
-            stake: roomFeeMap[entry.room_id] || 10,
-            date: new Date(entry.created_at).toLocaleDateString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-          }));
-
-          setLogs(formattedLogs);
-        } else {
-          setLogs([]);
-        }
-      } catch (err) { 
-        console.error("Failed to sync history:", err); 
-      } finally { 
-        setLoadingLogs(false); 
-      }
-    };
-    
-    if (tab === 'logs') fetchHistory();
-  }, [tab, tgId]);
 
   const handleJoinStake = async (opt: typeof STAKE_OPTIONS[0]) => {
     if (!tgId) return setError('Telegram ID not found.');
@@ -150,7 +195,7 @@ export default function BingoPage() {
   ];
 
   return (
-    <div className={`w-full h-[100dvh] bg-[#F0FDF4] dark:bg-[#02120b] text-[#022C22] dark:text-white flex flex-col font-sans relative overflow-hidden transition-colors duration-500 ${theme === 'dark' ? 'dark' : ''}`}>
+    <div className={`w-full h-dvh bg-[#F0FDF4] dark:bg-[#02120b] text-[#022C22] dark:text-white flex flex-col font-sans relative overflow-hidden transition-colors duration-500 ${theme === 'dark' ? 'dark' : ''}`}>
       
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] left-[-20%] w-96 h-96 bg-green-500/10 rounded-full blur-3xl"></div>
@@ -180,7 +225,7 @@ export default function BingoPage() {
           <span className="text-xl">🎱</span>
           <span className="font-extrabold text-base tracking-widest uppercase">CHELA</span>
         </div>
-        <div className="w-[88px] h-10 z-10" />
+        <div className="w-22 h-10 z-10" />
       </div>
 
       <header className="shrink-0 px-4 pb-4 z-10">
@@ -204,16 +249,16 @@ export default function BingoPage() {
                   <div className="absolute top-48 left-10 text-2xl animate-bounce" style={{ animationDelay: '1s' }}>🎲</div>
 
                   <div className="relative w-36 h-36 flex items-center justify-center mb-6 mt-6">
-                    <div className="absolute -top-2 left-0 w-16 h-16 bg-gradient-to-br from-red-400 to-red-700 rounded-full border-2 border-white/40 dark:border-white/20 shadow-[0_5px_15px_rgba(220,38,38,0.3)] dark:shadow-[0_0_15px_rgba(220,38,38,0.6)] flex items-center justify-center z-10">
+                    <div className="absolute -top-2 left-0 w-16 h-16 bg-linear-to-br from-red-400 to-red-700 rounded-full border-2 border-white/40 dark:border-white/20 shadow-[0_5px_15px_rgba(220,38,38,0.3)] dark:shadow-[0_0_15px_rgba(220,38,38,0.6)] flex items-center justify-center z-10">
                       <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-inner"><span className="text-red-600 font-black text-xl">B</span></div>
                     </div>
-                    <div className="absolute top-4 -right-2 w-14 h-14 bg-gradient-to-br from-blue-400 to-blue-700 rounded-full border-2 border-white/40 dark:border-white/20 shadow-[0_5px_15px_rgba(37,99,235,0.3)] dark:shadow-[0_0_15px_rgba(37,99,235,0.6)] flex items-center justify-center z-20">
+                    <div className="absolute top-4 -right-2 w-14 h-14 bg-linear-to-br from-blue-400 to-blue-700 rounded-full border-2 border-white/40 dark:border-white/20 shadow-[0_5px_15px_rgba(37,99,235,0.3)] dark:shadow-[0_0_15px_rgba(37,99,235,0.6)] flex items-center justify-center z-20">
                        <div className="w-7 h-7 bg-white rounded-full flex items-center justify-center shadow-inner"><span className="text-blue-600 font-black text-sm">7</span></div>
                     </div>
-                    <div className="absolute bottom-0 left-6 w-20 h-20 bg-gradient-to-br from-green-400 to-green-700 rounded-full border-2 border-white/40 dark:border-white/20 shadow-[0_5px_20px_rgba(22,163,74,0.4)] dark:shadow-[0_0_20px_rgba(22,163,74,0.8)] flex items-center justify-center z-30">
+                    <div className="absolute bottom-0 left-6 w-20 h-20 bg-linear-to-br from-green-400 to-green-700 rounded-full border-2 border-white/40 dark:border-white/20 shadow-[0_5px_20px_rgba(22,163,74,0.4)] dark:shadow-[0_0_20px_rgba(22,163,74,0.8)] flex items-center justify-center z-30">
                        <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-inner"><span className="text-green-600 font-black text-2xl">24</span></div>
                     </div>
-                    <div className="absolute -bottom-2 right-1 w-16 h-16 bg-gradient-to-br from-yellow-300 to-yellow-600 rounded-full border-2 border-white/40 dark:border-white/20 shadow-[0_5px_15px_rgba(202,138,4,0.3)] dark:shadow-[0_0_15px_rgba(202,138,4,0.6)] flex items-center justify-center z-20">
+                    <div className="absolute -bottom-2 right-1 w-16 h-16 bg-linear-to-br from-yellow-300 to-yellow-600 rounded-full border-2 border-white/40 dark:border-white/20 shadow-[0_5px_15px_rgba(202,138,4,0.3)] dark:shadow-[0_0_15px_rgba(202,138,4,0.6)] flex items-center justify-center z-20">
                        <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-inner"><span className="text-yellow-600 font-black text-lg">60</span></div>
                     </div>
                   </div>
@@ -222,43 +267,22 @@ export default function BingoPage() {
                   <p className="text-green-600 dark:text-green-400/80 text-sm font-bold tracking-widest uppercase mt-1 mb-8 text-center">100-Player Massive Multiplayer</p>
 
                   <button onClick={() => useBingoStore.setState({ screen: 'select' })} className="w-full relative group transition-transform active:scale-95">
-                    <div className="absolute -inset-1 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-2xl blur opacity-40 dark:opacity-70 transition duration-300"></div>
-                    <div className="relative w-full py-5 bg-gradient-to-b from-[#22c55e] to-[#16a34a] dark:from-[#115e3b] dark:to-[#0a4a2e] border border-green-300 dark:border-green-400/50 rounded-2xl flex items-center justify-center gap-3 shadow-[inset_0_2px_10px_rgba(255,255,255,0.4)] dark:shadow-[inset_0_2px_10px_rgba(255,255,255,0.2)]">
+                    <div className="absolute -inset-1 bg-linear-to-r from-yellow-400 to-orange-500 rounded-2xl blur opacity-40 dark:opacity-70 transition duration-300"></div>
+                    <div className="relative w-full py-5 bg-linear-to-b from-[#22c55e] to-[#16a34a] dark:from-[#115e3b] dark:to-[#0a4a2e] border border-green-300 dark:border-green-400/50 rounded-2xl flex items-center justify-center gap-3 shadow-[inset_0_2px_10px_rgba(255,255,255,0.4)] dark:shadow-[inset_0_2px_10px_rgba(255,255,255,0.2)]">
                       <span className="text-2xl">🎮</span>
                       <span className="text-2xl font-black text-white tracking-wide shadow-black drop-shadow-md">Play Now</span>
                     </div>
                   </button>
 
                   <div className="mt-6 text-center">
-                    <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-orange-500 dark:from-yellow-300 dark:to-yellow-600 drop-shadow-sm uppercase tracking-wider">WIN UP TO 8000 ETB!</h2>
+                    <h2 className="text-2xl font-black text-transparent bg-clip-text bg-linear-to-r from-yellow-500 to-orange-500 dark:from-yellow-300 dark:to-yellow-600 drop-shadow-sm uppercase tracking-wider">WIN UP TO 8000 ETB!</h2>
                     <p className="text-[#064E3B]/60 dark:text-white/50 text-xs mt-2 font-medium">Servers are live. Join a room to start winning!</p>
                   </div>
                 </motion.div>
               )}
 
-              {tab === 'logs' && (
-                <motion.div key="logs-tab" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-3 pt-4">
-                  <h2 className="text-xl font-black mb-2">My Game History</h2>
-                  {loadingLogs ? (
-                    <div className="text-center py-10 text-green-500 dark:text-green-400 animate-pulse">Syncing...</div>
-                  ) : logs.length === 0 ? (
-                    <div className="text-center py-10 text-[#064E3B]/60 dark:text-white/40 bg-white dark:bg-[#062416] rounded-xl border border-[#22C55E]/30 dark:border-white/5 shadow-sm dark:shadow-none">No games played yet.</div>
-                  ) : (
-                    logs.map((log, idx) => (
-                      <div key={idx} className="bg-white dark:bg-[#062416] border border-[#22C55E]/30 dark:border-white/5 rounded-xl p-4 flex justify-between items-center shadow-sm dark:shadow-none transition-colors">
-                        <div>
-                          <div className="text-sm font-bold mb-1">{log.id}</div>
-                          <div className="text-xs text-[#064E3B]/60 dark:text-white/40">{log.date}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-xs text-[#064E3B]/50 dark:text-white/50 uppercase tracking-wider mb-1">Stake</div>
-                          <div className="text-sm font-black text-green-600 dark:text-green-400">{log.stake} ETB</div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </motion.div>
-              )}
+              {/* 🚀 PHASE 4: THE ISOLATED LOGS INJECTION */}
+              {tab === 'logs' && <GameHistoryLogs tgId={tgId!} />}
 
               {tab === 'top' && (
                 <motion.div key="top-tab" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-2 pt-4">
@@ -303,10 +327,10 @@ export default function BingoPage() {
                   <div className="w-8 h-8" />
                 </div>
                 {/* 2. The Transparent Gradient Fringe (Overlaps the cards) */}
-                <div className="h-10 w-full bg-gradient-to-b from-[#F0FDF4] dark:from-[#02120b] to-transparent transition-colors -mb-10" />
+                <div className="h-10 w-full bg-linear-to-b from-[#F0FDF4] dark:from-[#02120b] to-transparent transition-colors -mb-10" />
               </div>
 
-              {error && <div className="mb-3 mt-6 bg-red-100 dark:bg-red-500/20 border border-red-300 dark:border-red-500/40 rounded-xl px-3 py-2 text-red-600 dark:text-red-300 text-sm font-bold relative z-10 px-4">{error}</div>}
+              {error && <div className="mb-3 mt-6 bg-red-100 dark:bg-red-500/20 border border-red-300 dark:border-red-500/40 rounded-xl px-3 py-2 text-red-600 dark:text-red-300 text-sm font-bold relative z-10">{error}</div>}
 
               {/* The Scrollable List */}
               <div className="space-y-4 pb-24 pt-4 overflow-y-auto flex-1 relative z-10 px-4 scrollbar-hide">
@@ -314,7 +338,7 @@ export default function BingoPage() {
                   const isThisLoading = loadingStakeId === opt.amount.toString();
                   return (
                     <motion.button key={opt.amount} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.1, duration: 0.3 }} whileTap={{ scale: 0.96 }} disabled={loadingStakeId !== null} onClick={() => handleJoinStake(opt)}
-                      className="w-full bg-white dark:bg-gradient-to-br dark:from-[#0a4a2e] dark:to-[#042b1a] border border-[#22C55E]/30 dark:border-white/10 shadow-sm dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)] relative rounded-2xl p-5 text-left disabled:opacity-50 hover:border-[#22C55E]/60 dark:hover:border-green-500/30 transition-colors"
+                      className="w-full bg-white dark:bg-linear-to-br dark:from-[#0a4a2e] dark:to-[#042b1a] border border-[#22C55E]/30 dark:border-white/10 shadow-sm dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)] relative rounded-2xl p-5 text-left disabled:opacity-50 hover:border-[#22C55E]/60 dark:hover:border-green-500/30 transition-colors"
                     >
                       <div className="relative z-10 flex items-center justify-between">
                         <div>
