@@ -30,9 +30,11 @@ function GameHistoryLogs({ tgId }: { tgId: number }) {
       try {
         const { data: cardsData, error: cardsError } = await supabase
           .from('bingo_cards')
-          .select('room_id, created_at, win_claimed, payout_amount')
+          // 🔧 CORRECTED: Requesting 'joined_at' instead of 'created_at'
+          .select('room_id, joined_at, win_claimed, payout_amount')
           .eq('tg_id', tgId)
-          .order('created_at', { ascending: false })
+          // 🔧 CORRECTED: Ordering by 'joined_at'
+          .order('joined_at', { ascending: false })
           .limit(15);
 
         if (cardsError) throw cardsError;
@@ -52,7 +54,8 @@ function GameHistoryLogs({ tgId }: { tgId: number }) {
           const formattedLogs = cardsData.map((entry: any) => ({
             id: entry.room_id.substring(0, 6).toUpperCase(),
             stake: roomFeeMap[entry.room_id] || 10,
-            date: new Date(entry.created_at).toLocaleDateString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            // 🔧 CORRECTED: Mapping the date from 'joined_at'
+            date: new Date(entry.joined_at).toLocaleDateString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
             won: entry.win_claimed,
             payout: entry.payout_amount || 0
           }));
