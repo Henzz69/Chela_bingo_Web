@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useTelegram } from '@/lib/useTelegram';
 
 // 🛡️ THE VAULT KEYS (Add your partner's ID replacing the 000000000)
-const ALLOWED_ADMIN_IDS = [5681654051,373753326];
+const ALLOWED_ADMIN_IDS = [5681654051, 373753326 ];
 
 type TimeScale = 'today' | 'week' | 'month' | 'all';
 
@@ -26,6 +26,12 @@ interface DashboardStats {
   netFlow: number;
 }
 
+interface AdminStats {
+  total_profit: number;
+  total_wallets: number;
+  active_rooms: number;
+}
+
 export default function AdminDashboard() {
   const { tgId, isTelegram } = useTelegram();
   
@@ -33,6 +39,7 @@ export default function AdminDashboard() {
   const [timeScale, setTimeScale] = useState<TimeScale>('today');
   
   const [stats, setStats] = useState<DashboardStats>({ deposits: 0, withdrawals: 0, gamesHosted: 0, netFlow: 0 });
+  const [macroStats, setMacroStats] = useState<AdminStats | null>(null);
   const [pendingTxs, setPendingTxs] = useState<Transaction[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
@@ -44,15 +51,15 @@ export default function AdminDashboard() {
     return () => clearTimeout(timer);
   }, [tgId]);
 
-  // 📊 THE TIME-SCALED ANALYTICS ENGINE
+  // 📊 THE HYBRID ANALYTICS ENGINE (RPC + Time-Scaled)
   useEffect(() => {
-    // Only run queries if the current user is authorized
+    // Only run queries if the current user is cryptographically authorized
     if (!tgId || !ALLOWED_ADMIN_IDS.includes(tgId)) return;
 
     const fetchDashboardData = async () => {
       setIsLoadingData(true);
       
-      // Calculate Time Boundary
+      // Calculate Time Boundary for Micro Stats
       const now = new Date();
       let startDate = new Date(0); // Epoch (All Time)
       if (timeScale === 'today') startDate = new Date(now.setHours(0,0,0,0));
@@ -61,29 +68,32 @@ export default function AdminDashboard() {
       const isoStart = startDate.toISOString();
 
       try {
-        // 1. Fetch Pending Queue (Always fetches ALL pending, regardless of timescale)
+        // 1. Fetch Global Telemetry (RPC)
+        const { data: globalData, error: globalError } = await supabase.rpc('get_admin_stats');
+        if (!globalError && globalData) setMacroStats(globalData as AdminStats);
+
+        // 2. Fetch Pending Queue (Always fetches ALL pending)
         const { data: pendingData } = await supabase
           .from('transactions')
           .select('*')
           .eq('status', 'pending')
           .order('created_at', { ascending: false });
-        
         if (pendingData) setPendingTxs(pendingData);
 
-        // 2. Fetch Time-Scaled Transactions (Completed only)
+        // 3. Fetch Time-Scaled Transactions (Completed only)
         const { data: txData } = await supabase
           .from('transactions')
           .select('amount, tx_type')
           .gte('created_at', isoStart)
           .eq('status', 'completed');
 
-        // 3. Fetch Time-Scaled Games
+        // 4. Fetch Time-Scaled Games
         const { count: gamesCount } = await supabase
           .from('bingo_rooms')
           .select('*', { count: 'exact', head: true })
           .gte('created_at', isoStart);
 
-        // 4. Crunch the Numbers
+        // 5. Crunch the Micro Numbers
         let deposits = 0;
         let withdrawals = 0;
 
@@ -111,7 +121,7 @@ export default function AdminDashboard() {
     return () => clearInterval(interval);
   }, [tgId, timeScale]);
 
-  // Helper: Format relative time (e.g., "10m ago")
+  // Helper: Format relative time
   const timeAgo = (dateStr: string) => {
     const diff = Math.floor((new Date().getTime() - new Date(dateStr).getTime()) / 60000);
     if (diff < 1) return 'Just now';
@@ -121,30 +131,21 @@ export default function AdminDashboard() {
   };
 
   // ==========================================
-  // RENDER: AUTHENTICATING
+  // RENDER: AUTHENTICATING (Silent Buffer)
   // ==========================================
   if (isAuthenticating) {
-    return (
-      <div className="min-h-screen bg-[#050505] flex flex-col items-center justify-center font-mono p-4">
-        <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-emerald-500 font-bold tracking-widest animate-pulse">VERIFYING CLEARANCE...</p>
-      </div>
-    );
+    return <div className="min-h-screen bg-[#02120b]" />; 
   }
 
   // ==========================================
-  // RENDER: ACCESS DENIED
+  // RENDER: STEALTH BOUNCER (Looks like a 404)
   // ==========================================
   if (!tgId || !ALLOWED_ADMIN_IDS.includes(tgId)) {
     return (
-      <div className="min-h-screen bg-[#050505] flex items-center justify-center p-4 font-mono">
-        <div className="bg-red-950/30 border border-red-500/50 p-8 rounded-2xl text-center max-w-md w-full shadow-[0_0_50px_rgba(239,68,68,0.1)]">
-          <div className="text-6xl mb-4">🛑</div>
-          <h1 className="text-3xl font-black text-red-500 mb-2 tracking-widest uppercase">Access Denied</h1>
-          <p className="text-red-400/80 text-sm mb-6">Unrecognized Telegram Signature.</p>
-          <div className="text-xs text-red-500/50 font-mono bg-red-950/50 p-2 rounded break-all">
-            ERR_UNAUTHORIZED_ID: {tgId || 'NULL_SESSION'}
-          </div>
+      <div className="min-h-screen bg-[#F0FDF4] dark:bg-[#02120b] flex flex-col items-center justify-center font-sans">
+        <div className="text-center">
+          <h1 className="text-4xl font-black text-[#022C22] dark:text-white mb-2 tracking-tight">404</h1>
+          <p className="text-[#064E3B]/60 dark:text-white/60 text-sm font-bold uppercase tracking-widest">Page Not Found</p>
         </div>
       </div>
     );
@@ -172,7 +173,39 @@ export default function AdminDashboard() {
           </div>
         </header>
 
-        {/* The Action Center: Pending Queue */}
+        {/* 🌍 GLOBAL TELEMETRY (Restored Macro Stats) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500"></div>
+            <h3 className="text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-1">Total House Profit</h3>
+            <div className="text-4xl font-black text-white flex items-baseline gap-1">
+              {macroStats?.total_profit?.toLocaleString() || '0'} <span className="text-sm text-emerald-500">ETB</span>
+            </div>
+            <p className="text-emerald-400/60 text-[10px] mt-2 uppercase tracking-widest">All-time collected Derash</p>
+          </div>
+
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-blue-500"></div>
+            <h3 className="text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-1">ETB In Circulation</h3>
+            <div className="text-4xl font-black text-white flex items-baseline gap-1">
+              {macroStats?.total_wallets?.toLocaleString() || '0'} <span className="text-sm text-blue-500">ETB</span>
+            </div>
+            <p className="text-blue-400/60 text-[10px] mt-2 uppercase tracking-widest">Active balances across all users</p>
+          </div>
+
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-orange-500"></div>
+            <h3 className="text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-1">Active Servers</h3>
+            <div className="text-4xl font-black text-white flex items-baseline gap-1">
+              {macroStats?.active_rooms || '0'}
+            </div>
+            <p className="text-orange-400/60 text-[10px] mt-2 uppercase tracking-widest">Games playing or waiting</p>
+          </div>
+
+        </div>
+
+        {/* ⚡ THE ACTION CENTER: Pending Queue */}
         <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg">
           <div className="bg-neutral-900 border-b border-neutral-800 px-6 py-4 flex justify-between items-center">
             <h2 className="text-lg font-black tracking-widest text-white flex items-center gap-2">
@@ -219,9 +252,9 @@ export default function AdminDashboard() {
           </div>
         </section>
 
-        {/* Analytics Timeframe Toggle */}
+        {/* ⏱️ TIME-SCALED FINANCIAL ANALYTICS */}
         <div className="flex items-center justify-between pt-4">
-          <h2 className="text-sm font-bold tracking-widest text-neutral-400 uppercase">Financial Analytics</h2>
+          <h2 className="text-sm font-bold tracking-widest text-neutral-400 uppercase">Financial Velocity</h2>
           <div className="flex bg-neutral-900 border border-neutral-800 rounded-lg p-1">
             {(['today', 'week', 'month', 'all'] as TimeScale[]).map((scale) => (
               <button key={scale} onClick={() => setTimeScale(scale)}
@@ -233,35 +266,25 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Dynamic Stat Cards */}
         <div className={`grid grid-cols-1 md:grid-cols-4 gap-4 transition-opacity duration-300 ${isLoadingData ? 'opacity-50' : 'opacity-100'}`}>
-          
           <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden flex flex-col justify-between">
-            <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500"></div>
             <h3 className="text-neutral-500 text-[10px] font-black tracking-widest uppercase mb-2">Total Deposits</h3>
             <div className="text-3xl font-black text-emerald-400">+{stats.deposits.toLocaleString()}</div>
           </div>
-
           <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden flex flex-col justify-between">
-            <div className="absolute top-0 left-0 w-full h-1 bg-orange-500"></div>
             <h3 className="text-neutral-500 text-[10px] font-black tracking-widest uppercase mb-2">Total Withdrawals</h3>
             <div className="text-3xl font-black text-orange-400">-{stats.withdrawals.toLocaleString()}</div>
           </div>
-
           <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden flex flex-col justify-between">
-            <div className="absolute top-0 left-0 w-full h-1 bg-blue-500"></div>
             <h3 className="text-neutral-500 text-[10px] font-black tracking-widest uppercase mb-2">Net Cash Flow</h3>
             <div className={`text-3xl font-black ${stats.netFlow >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
               {stats.netFlow > 0 ? '+' : ''}{stats.netFlow.toLocaleString()}
             </div>
           </div>
-
           <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden flex flex-col justify-between">
-            <div className="absolute top-0 left-0 w-full h-1 bg-purple-500"></div>
             <h3 className="text-neutral-500 text-[10px] font-black tracking-widest uppercase mb-2">Games Hosted</h3>
             <div className="text-3xl font-black text-purple-400">{stats.gamesHosted.toLocaleString()}</div>
           </div>
-
         </div>
 
       </div>
