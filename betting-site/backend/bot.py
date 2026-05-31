@@ -120,7 +120,7 @@ def _start_tunnel(port: int = 3000) -> str:
     _tunnel_proc = subprocess.Popen(["npx", "localtunnel", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
     url = None
     for line in _tunnel_proc.stdout:
-        match = re.search(r"your url is:\s*(https://S+)", line)
+        match = re.search(r"your url is:\s*(https://\S+)", line)
         if match:
             url = match.group(1).strip()
             break
@@ -142,13 +142,16 @@ if not MINI_APP_URL or "your-deployed-url" in MINI_APP_URL:
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 bot.delete_webhook(drop_pending_updates=True)
 
-# 🚀 BUILD PERSISTENT POPUP COMMAND MENU
+# 🚀 BUILD PERSISTENT POPUP COMMAND MENU (Ordered by Necessity)
 try:
     bot.set_my_commands([
-        BotCommand("start", "Main Menu & Language / ዋና ማውጫ"),
-        BotCommand("balance", "Check Balance / ቀሪ ሂሳብ ማየት"),
+        BotCommand("play", "Launch Bingo / ጨዋታ ጀምር"),
         BotCommand("deposit", "Deposit Funds / ብር ማስገባት"),
-        BotCommand("withdraw", "Withdraw Funds / ብር ማውጣት")
+        BotCommand("withdraw", "Withdraw Funds / ብር ማውጣት"),
+        BotCommand("balance", "Check Balance / ቀሪ ሂሳብ ማየት"),
+        BotCommand("invite", "Refer Friends / ጓደኛ ጋብዝ"),
+        BotCommand("support", "Help Center / የድጋፍ ማዕከል"),
+        BotCommand("start", "Main Menu / ዋና ማውጫ")
     ])
     print("--- Persistent command menu loaded successfully ---")
 except Exception as cmd_err:
@@ -206,7 +209,9 @@ STRINGS = {
         "api_used": "🚨 *Fraud Alert:*\nThis Transaction ID has already been used and credited to an account. Double-spending is not allowed.",
         "api_error": "🚨 *System Error:*\nBank verification services are currently experiencing delays. Please try again later.",
         "inst_telebirr": "📱 *TELEBIRR PAYMENT INSTRUCTIONS*\n\n1️⃣ Open your Telebirr App or dial `*127#`.\n2️⃣ Send the amount of *{} ETB* to Merchant/Agent Number: *894921*\n3️⃣ Once completed, copy the **Transaction ID** (e.g. `4HF89SDF93`) or paste the full confirmation SMS text here:",
-        "inst_cbe": "🏦 *CBE PAYMENT INSTRUCTIONS*\n\n1️⃣ Use CBE Birr, CBE Mobile Banking App or ATM.\n2️⃣ Transfer *{} ETB* to Account Number: *1000481948212* (CHELA ENT.)\n3️⃣ Copy the **Transaction Ref** (e.g. `FT26XXXXXXXX`) or paste the full credit SMS confirmation directly here:"
+        "inst_cbe": "🏦 *CBE PAYMENT INSTRUCTIONS*\n\n1️⃣ Use CBE Birr, CBE Mobile Banking App or ATM.\n2️⃣ Transfer *{} ETB* to Account Number: *1000481948212* (CHELA ENT.)\n3️⃣ Copy the **Transaction Ref** (e.g. `FT26XXXXXXXX`) or paste the full credit SMS confirmation directly here:",
+        "invite_msg": "🎁 *Invite Friends & Earn!*\n\nShare this bot with your friends and earn rewards when they play.\n\nYour Invite Link:\n`https://t.me/ChelaBingoBot?start={}`",
+        "support_msg": "🎧 *CHELA Bingo Support*\n\nNeed help with a deposit, withdrawal, or a game issue? Our team is here 24/7.\n\nContact us directly: @ChelaSupport"
     },
     "am": {
         "welcome_back": "🎱 *ቼላ ቢንጎ (CHELA Bingo)*\n\nወደ መጫወቻው አዳራሽ በደህና መጡ! ምዝገባዎ ተጠናቋል።\n\n• የቢንጎ መተግበሪያውን ለመክፈት *PLAY CHELA BINGO* የሚለውን ይጫኑ።\n• ሂሳብዎን ከታች ባለው መቆጣጠሪያ ማስተዳደር ይችላሉ።",
@@ -235,7 +240,9 @@ STRINGS = {
         "api_used": "🚨 *የማጭበርበር ሙከራ:*\nይህ የግብይት መለያ ቁጥር ከዚህ በፊት ጥቅም ላይ ውሏል። አንድን ደረሰኝ ደጋግሞ መጠቀም አይቻልም።",
         "api_error": "🚨 *የስርዓት መቆራረጥ:*\nየባንክ ማረጋገጫ መስመሮች ስራ በዝቶባቸዋል። እባክዎ ከጥቂት ደቂቃዎች በኋላ እንደገና ይሞክሩ።",
         "inst_telebirr": "📱 *የቴሌብር ክፍያ መመሪያ*\n\n1️⃣ የቴሌብር መተግበሪያዎን ይክፈቱ ወይም `*127#` ይደውሉ።\n2️⃣ የክፍያ መጠን *{} ETB* ወደ መለያ ቁጥር (Merchant/Agent): *894921* ይላኩ።\n3️⃣ ክፍያውን ሲያጠናቅቁ የነጋዴውን **የግብይት መለያ ቁጥር (Transaction ID)** (ምሳሌ፦ `4HF89SDF93`) ይቅዱ ወይም ሙሉውን የኤስኤምኤስ (SMS) መልእክት እዚህ ይላኩ፦",
-        "inst_cbe": "🏦 *የኢትዮጵያ ንግድ ባንክ (CBE) ክፍያ መመሪያ*\n\n1️⃣ የCBE Birr፣ የCBE ሞባይል ባንኪንግ መተግበሪያን ወይም ኤቲኤምን ይጠቀሙ።\n2️⃣ የክፍያ መጠን *{} ETB* ወደ ሂሳብ ቁጥር: *1000481948212* (CHELA ENT.) ያስተላልፉ።\n3️⃣ የክፍያ ማረጋገጫ **የግብይት መለያ ቁጥር (Transaction Ref)** (ምሳሌ፦ `FT26XXXXXXXX`) ይቅዱ ወይም ሙሉውን የደረሰኝ ኤስኤምኤስ በቀጥታ እዚህ ይላኩ፦"
+        "inst_cbe": "🏦 *የኢትዮጵያ ንግድ ባንክ (CBE) ክፍያ መመሪያ*\n\n1️⃣ የCBE Birr፣ የCBE ሞባይል ባንኪንግ መተግበሪያን ወይም ኤቲኤምን ይጠቀሙ።\n2️⃣ የክፍያ መጠን *{} ETB* ወደ ሂሳብ ቁጥር: *1000481948212* (CHELA ENT.) ያስተላልፉ።\n3️⃣ የክፍያ ማረጋገጫ **የግብይት መለያ ቁጥር (Transaction Ref)** (ምሳሌ፦ `FT26XXXXXXXX`) ይቅዱ ወይም ሙሉውን የደረሰኝ ኤስኤምኤስ በቀጥታ እዚህ ይላኩ፦",
+        "invite_msg": "🎁 *ጓደኞችዎን ይጋብዙ!*\n\nይህን ቦት ለጓደኞችዎ በማጋራት ሲጫወቱ ሽልማቶችን ያግኙ።\n\nየመጋበዣ ሊንክዎ:\n`https://t.me/ChelaBingoBot?start={}`",
+        "support_msg": "🎧 *የቼላ ቢንጎ ድጋፍ ማዕከል*\n\nስለ ክፍያ፣ ገንዘብ ማውጣት ወይም ጨዋታ እርዳታ ይፈልጋሉ? ቡድናችን 24/7 ዝግጁ ነው።\n\nያነጋግሩን: @ChelaSupport"
     }
 }
 
@@ -327,12 +334,56 @@ def _extract_transaction_id(text: str) -> str:
 # ---------------------------------------------------------------------------
 @bot.message_handler(commands=["start"])
 def cmd_start(message):
-    set_state(message.chat.id, STATE_IDLE)
+    chat_id = message.chat.id
+    set_state(chat_id, STATE_IDLE)
+    
+    # 🚀 FIX: Memory Check. Skip language pop-up if already registered
+    if _is_user_registered(message.from_user.id):
+        lang = get_lang(chat_id)
+        bot.send_message(
+            chat_id, 
+            STRINGS[lang]["welcome_back"], 
+            reply_markup=main_menu_markup(lang)
+        )
+    else:
+        bot.send_message(
+            chat_id,
+            "🌐 Choose Language / እባክዎ ቋንቋ ይምረጡ፡",
+            reply_markup=lang_selection_markup()
+        )
+
+@bot.message_handler(commands=["play"])
+def cmd_play(message):
+    chat_id = message.chat.id
+    lang = get_lang(chat_id)
+    
+    # Send a standalone button strictly for launching the game
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(STRINGS[lang]["play_btn"], web_app=WebAppInfo(url=MINI_APP_URL)))
     
     bot.send_message(
-        message.chat.id,
-        "🌐 Choose Language / እባክዎ ቋንቋ ይምረጡ፡",
-        reply_markup=lang_selection_markup()
+        chat_id,
+        "🎰 *Ready to play?* Click below to launch:",
+        reply_markup=kb
+    )
+
+@bot.message_handler(commands=["invite"])
+def cmd_invite(message):
+    chat_id = message.chat.id
+    lang = get_lang(chat_id)
+    # Using their TG ID as the referral code suffix
+    bot.send_message(
+        chat_id, 
+        STRINGS[lang]["invite_msg"].format(message.from_user.id)
+    )
+
+@bot.message_handler(commands=["support"])
+def cmd_support(message):
+    chat_id = message.chat.id
+    lang = get_lang(chat_id)
+    bot.send_message(
+        chat_id, 
+        STRINGS[lang]["support_msg"]
     )
 
 @bot.message_handler(commands=["balance"])
