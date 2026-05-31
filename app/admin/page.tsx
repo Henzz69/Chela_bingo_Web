@@ -1,11 +1,30 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabaseClient';
-import { useBingoStore } from '@/store/bingoStore';     // Assuming you have the user's tgId here
+import { useTelegram } from '@/lib/useTelegram';
 
-// 🛡️ THE VAULT LOCK: Only this Telegram ID can see the page
-const ADMIN_TG_ID = 5681654051; 
+// 🛡️ THE VAULT KEYS (Add your partner's ID replacing the 000000000)
+const ALLOWED_ADMIN_IDS = [5681654051, 373753326 ];
+
+type TimeScale = 'today' | 'week' | 'month' | 'all';
+
+interface Transaction {
+  id: string;
+  user_id: string;
+  amount: number;
+  tx_type: string;
+  status: string;
+  created_at: string;
+}
+
+interface DashboardStats {
+  deposits: number;
+  withdrawals: number;
+  gamesHosted: number;
+  netFlow: number;
+}
 
 interface AdminStats {
   total_profit: number;
@@ -14,103 +33,259 @@ interface AdminStats {
 }
 
 export default function AdminDashboard() {
-  const [stats, setStats] = useState<AdminStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { tgId, isTelegram } = useTelegram();
   
-  // We mock fetching the current user's ID. In your real app, pull this from Telegram WebApp initData
-  const currentTgId = 5681654051; // Replace with actual logic to get logged-in user's TG ID
+  const [isAuthenticating, setIsAuthenticating] = useState(true);
+  const [timeScale, setTimeScale] = useState<TimeScale>('today');
+  
+  const [stats, setStats] = useState<DashboardStats>({ deposits: 0, withdrawals: 0, gamesHosted: 0, netFlow: 0 });
+  const [macroStats, setMacroStats] = useState<AdminStats | null>(null);
+  const [pendingTxs, setPendingTxs] = useState<Transaction[]>([]);
+  const [isLoadingData, setIsLoadingData] = useState(true);
 
+  // 🛡️ AUTHENTICATION BOUNCER
   useEffect(() => {
-    if (currentTgId !== ADMIN_TG_ID) return;
+    // Give the Telegram SDK 1.5 seconds to inject the ID before we permanently bounce them
+    const timer = setTimeout(() => setIsAuthenticating(false), 1500);
+    if (tgId) setIsAuthenticating(false);
+    return () => clearTimeout(timer);
+  }, [tgId]);
 
-    const fetchStats = async () => {
+  // 📊 THE HYBRID ANALYTICS ENGINE (RPC + Time-Scaled)
+  useEffect(() => {
+    // Only run queries if the current user is cryptographically authorized
+    if (!tgId || !ALLOWED_ADMIN_IDS.includes(tgId)) return;
+
+    const fetchDashboardData = async () => {
+      setIsLoadingData(true);
+      
+      // Calculate Time Boundary for Micro Stats
+      const now = new Date();
+      let startDate = new Date(0); // Epoch (All Time)
+      if (timeScale === 'today') startDate = new Date(now.setHours(0,0,0,0));
+      if (timeScale === 'week') startDate = new Date(now.setDate(now.getDate() - 7));
+      if (timeScale === 'month') startDate = new Date(now.setDate(now.getDate() - 30));
+      const isoStart = startDate.toISOString();
+
       try {
-        const { data, error } = await supabase.rpc('get_admin_stats');
-        if (error) throw error;
-        setStats(data as AdminStats);
-      } catch (err: any) {
-        setError(err.message);
+        // 1. Fetch Global Telemetry (RPC)
+        const { data: globalData, error: globalError } = await supabase.rpc('get_admin_stats');
+        if (!globalError && globalData) setMacroStats(globalData as AdminStats);
+
+        // 2. Fetch Pending Queue (Always fetches ALL pending)
+        const { data: pendingData } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
+        if (pendingData) setPendingTxs(pendingData);
+
+        // 3. Fetch Time-Scaled Transactions (Completed only)
+        const { data: txData } = await supabase
+          .from('transactions')
+          .select('amount, tx_type')
+          .gte('created_at', isoStart)
+          .eq('status', 'completed');
+
+        // 4. Fetch Time-Scaled Games
+        const { count: gamesCount } = await supabase
+          .from('bingo_rooms')
+          .select('*', { count: 'exact', head: true })
+          .gte('created_at', isoStart);
+
+        // 5. Crunch the Micro Numbers
+        let deposits = 0;
+        let withdrawals = 0;
+
+        txData?.forEach(tx => {
+          if (tx.tx_type === 'deposit') deposits += Number(tx.amount);
+          if (tx.tx_type === 'withdrawal') withdrawals += Number(tx.amount);
+        });
+
+        setStats({
+          deposits,
+          withdrawals,
+          gamesHosted: gamesCount || 0,
+          netFlow: deposits - withdrawals
+        });
+
+      } catch (err) {
+        console.error("Dashboard Sync Failed:", err);
       } finally {
-        setLoading(false);
+        setIsLoadingData(false);
       }
     };
 
-    fetchStats();
-    
-    // Set an interval to refresh the stats every 10 seconds so you can watch it live!
-    const interval = setInterval(fetchStats, 10000);
+    fetchDashboardData();
+    const interval = setInterval(fetchDashboardData, 15000); // Live refresh every 15s
     return () => clearInterval(interval);
-  }, [currentTgId]);
+  }, [tgId, timeScale]);
 
-  // 🛑 SECURITY BOUNCER
-  if (currentTgId !== ADMIN_TG_ID) {
+  // Helper: Format relative time
+  const timeAgo = (dateStr: string) => {
+    const diff = Math.floor((new Date().getTime() - new Date(dateStr).getTime()) / 60000);
+    if (diff < 1) return 'Just now';
+    if (diff < 60) return `${diff}m ago`;
+    if (diff < 1440) return `${Math.floor(diff / 60)}h ago`;
+    return `${Math.floor(diff / 1440)}d ago`;
+  };
+
+  // ==========================================
+  // RENDER: AUTHENTICATING (Silent Buffer)
+  // ==========================================
+  if (isAuthenticating) {
+    return <div className="min-h-screen bg-[#02120b]" />; 
+  }
+
+  // ==========================================
+  // RENDER: STEALTH BOUNCER (Looks like a 404)
+  // ==========================================
+  if (!tgId || !ALLOWED_ADMIN_IDS.includes(tgId)) {
     return (
-      <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4">
-        <div className="bg-red-900/20 border border-red-500/50 p-6 rounded-xl text-center">
-          <h1 className="text-2xl font-bold text-red-500 mb-2">403: Access Denied</h1>
-          <p className="text-red-200">You do not have god-mode privileges.</p>
+      <div className="min-h-screen bg-[#F0FDF4] dark:bg-[#02120b] flex flex-col items-center justify-center font-sans">
+        <div className="text-center">
+          <h1 className="text-4xl font-black text-[#022C22] dark:text-white mb-2 tracking-tight">404</h1>
+          <p className="text-[#064E3B]/60 dark:text-white/60 text-sm font-bold uppercase tracking-widest">Page Not Found</p>
         </div>
       </div>
     );
   }
 
+  // ==========================================
+  // RENDER: SECURE DASHBOARD
+  // ==========================================
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 p-4 md:p-8 font-mono">
-      <div className="max-w-5xl mx-auto">
+    <div className="min-h-screen bg-[#050505] text-neutral-100 p-4 md:p-8 font-mono overflow-y-auto">
+      <div className="max-w-5xl mx-auto space-y-8 pb-24">
         
         {/* Header */}
-        <div className="flex items-center justify-between mb-8 pb-4 border-b border-neutral-800">
+        <header className="flex items-center justify-between pb-4 border-b border-neutral-800">
           <div>
-            <h1 className="text-3xl font-bold tracking-tighter text-emerald-400">CHELA COMMAND</h1>
-            <p className="text-neutral-500 text-sm mt-1">Live Network Telemetry</p>
+            <h1 className="text-3xl font-black tracking-tighter text-emerald-400 drop-shadow-[0_0_15px_rgba(16,185,129,0.3)]">CHELA COMMAND</h1>
+            <p className="text-neutral-500 text-xs tracking-widest uppercase mt-1">Live Network Telemetry</p>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-            <span className="text-emerald-500 text-sm font-semibold">SYSTEM LIVE</span>
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex items-center gap-2 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+              <span className="text-emerald-500 text-[10px] font-black tracking-widest">SYSTEM ONLINE</span>
+            </div>
+            <span className="text-[9px] text-neutral-600 tracking-widest">ID: {tgId}</span>
+          </div>
+        </header>
+
+        {/* 🌍 GLOBAL TELEMETRY (Restored Macro Stats) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500"></div>
+            <h3 className="text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-1">Total House Profit</h3>
+            <div className="text-4xl font-black text-white flex items-baseline gap-1">
+              {macroStats?.total_profit?.toLocaleString() || '0'} <span className="text-sm text-emerald-500">ETB</span>
+            </div>
+            <p className="text-emerald-400/60 text-[10px] mt-2 uppercase tracking-widest">All-time collected Derash</p>
+          </div>
+
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-blue-500"></div>
+            <h3 className="text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-1">ETB In Circulation</h3>
+            <div className="text-4xl font-black text-white flex items-baseline gap-1">
+              {macroStats?.total_wallets?.toLocaleString() || '0'} <span className="text-sm text-blue-500">ETB</span>
+            </div>
+            <p className="text-blue-400/60 text-[10px] mt-2 uppercase tracking-widest">Active balances across all users</p>
+          </div>
+
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-orange-500"></div>
+            <h3 className="text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-1">Active Servers</h3>
+            <div className="text-4xl font-black text-white flex items-baseline gap-1">
+              {macroStats?.active_rooms || '0'}
+            </div>
+            <p className="text-orange-400/60 text-[10px] mt-2 uppercase tracking-widest">Games playing or waiting</p>
+          </div>
+
+        </div>
+
+        {/* ⚡ THE ACTION CENTER: Pending Queue */}
+        <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg">
+          <div className="bg-neutral-900 border-b border-neutral-800 px-6 py-4 flex justify-between items-center">
+            <h2 className="text-lg font-black tracking-widest text-white flex items-center gap-2">
+              <span className="text-yellow-500">⚡</span> PENDING QUEUE
+            </h2>
+            <span className="bg-yellow-500/10 text-yellow-500 text-[10px] font-bold px-2 py-1 rounded border border-yellow-500/20 uppercase">
+              {pendingTxs.length} Awaiting Bot
+            </span>
+          </div>
+          
+          <div className="overflow-x-auto">
+            {pendingTxs.length === 0 ? (
+              <div className="p-8 text-center text-neutral-500 text-sm font-medium">All queues clear. Bot is fully synced.</div>
+            ) : (
+              <table className="w-full text-left text-sm">
+                <thead className="text-[10px] uppercase text-neutral-500 bg-neutral-950/50">
+                  <tr>
+                    <th className="px-6 py-3 font-semibold">Time</th>
+                    <th className="px-6 py-3 font-semibold">User ID</th>
+                    <th className="px-6 py-3 font-semibold">Type</th>
+                    <th className="px-6 py-3 font-semibold text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-800/50">
+                  <AnimatePresence>
+                    {pendingTxs.map((tx) => (
+                      <motion.tr key={tx.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="hover:bg-neutral-800/30 transition-colors">
+                        <td className="px-6 py-4 text-neutral-400 text-xs">{timeAgo(tx.created_at)}</td>
+                        <td className="px-6 py-4 font-mono text-neutral-300 text-xs">{tx.user_id}</td>
+                        <td className="px-6 py-4">
+                          <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-full border ${tx.tx_type === 'deposit' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-orange-500/10 text-orange-400 border-orange-500/20'}`}>
+                            {tx.tx_type}
+                          </span>
+                        </td>
+                        <td className={`px-6 py-4 text-right font-black ${tx.tx_type === 'deposit' ? 'text-emerald-400' : 'text-orange-400'}`}>
+                          {tx.amount.toLocaleString()} ETB
+                        </td>
+                      </motion.tr>
+                    ))}
+                  </AnimatePresence>
+                </tbody>
+              </table>
+            )}
+          </div>
+        </section>
+
+        {/* ⏱️ TIME-SCALED FINANCIAL ANALYTICS */}
+        <div className="flex items-center justify-between pt-4">
+          <h2 className="text-sm font-bold tracking-widest text-neutral-400 uppercase">Financial Velocity</h2>
+          <div className="flex bg-neutral-900 border border-neutral-800 rounded-lg p-1">
+            {(['today', 'week', 'month', 'all'] as TimeScale[]).map((scale) => (
+              <button key={scale} onClick={() => setTimeScale(scale)}
+                className={`px-4 py-1.5 text-xs font-bold uppercase tracking-widest rounded-md transition-all ${timeScale === scale ? 'bg-emerald-500 text-black shadow-sm' : 'text-neutral-500 hover:text-neutral-300'}`}
+              >
+                {scale === 'week' ? '7D' : scale === 'month' ? '30D' : scale}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Loading / Error States */}
-        {loading && <p className="text-neutral-400 animate-pulse">Establishing secure connection...</p>}
-        {error && <p className="text-red-400 bg-red-900/20 p-4 rounded-lg border border-red-900">{error}</p>}
-
-        {/* Dashboard Grid */}
-        {stats && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            
-            {/* House Profit Card */}
-            <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-xl relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500"></div>
-              <h3 className="text-neutral-400 text-sm font-semibold mb-1">TOTAL HOUSE PROFIT</h3>
-              <div className="text-4xl font-bold text-white flex items-baseline gap-1">
-                {stats.total_profit.toLocaleString()} <span className="text-lg text-emerald-500">ETB</span>
-              </div>
-              <p className="text-emerald-400/60 text-xs mt-2">All-time collected Derash</p>
-            </div>
-
-            {/* Total Player Wallets Card */}
-            <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-xl relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-1 bg-blue-500"></div>
-              <h3 className="text-neutral-400 text-sm font-semibold mb-1">TOTAL ETB IN CIRCULATION</h3>
-              <div className="text-4xl font-bold text-white flex items-baseline gap-1">
-                {stats.total_wallets.toLocaleString()} <span className="text-lg text-blue-500">ETB</span>
-              </div>
-              <p className="text-blue-400/60 text-xs mt-2">Current balances across all users</p>
-            </div>
-
-            {/* Active Rooms Card */}
-            <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-xl relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-1 bg-orange-500"></div>
-              <h3 className="text-neutral-400 text-sm font-semibold mb-1">ACTIVE SERVERS</h3>
-              <div className="text-4xl font-bold text-white flex items-baseline gap-1">
-                {stats.active_rooms}
-              </div>
-              <p className="text-orange-400/60 text-xs mt-2">Games currently playing or waiting</p>
-            </div>
-
+        <div className={`grid grid-cols-1 md:grid-cols-4 gap-4 transition-opacity duration-300 ${isLoadingData ? 'opacity-50' : 'opacity-100'}`}>
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden flex flex-col justify-between">
+            <h3 className="text-neutral-500 text-[10px] font-black tracking-widest uppercase mb-2">Total Deposits</h3>
+            <div className="text-3xl font-black text-emerald-400">+{stats.deposits.toLocaleString()}</div>
           </div>
-        )}
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden flex flex-col justify-between">
+            <h3 className="text-neutral-500 text-[10px] font-black tracking-widest uppercase mb-2">Total Withdrawals</h3>
+            <div className="text-3xl font-black text-orange-400">-{stats.withdrawals.toLocaleString()}</div>
+          </div>
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden flex flex-col justify-between">
+            <h3 className="text-neutral-500 text-[10px] font-black tracking-widest uppercase mb-2">Net Cash Flow</h3>
+            <div className={`text-3xl font-black ${stats.netFlow >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
+              {stats.netFlow > 0 ? '+' : ''}{stats.netFlow.toLocaleString()}
+            </div>
+          </div>
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden flex flex-col justify-between">
+            <h3 className="text-neutral-500 text-[10px] font-black tracking-widest uppercase mb-2">Games Hosted</h3>
+            <div className="text-3xl font-black text-purple-400">{stats.gamesHosted.toLocaleString()}</div>
+          </div>
+        </div>
 
       </div>
     </div>
