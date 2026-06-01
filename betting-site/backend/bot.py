@@ -670,26 +670,31 @@ def handle_text(message):
             api_data = response.json()
 
             if api_data.get("success"):
-                verified_amount = float(api_data.get("transactionAmount", api_data.get("total", 0.0)))
+                # 🟢 THE FIX: ROBUST AMOUNT PARSING
+                # Check multiple possible dictionary keys and strip formatting commas
+                raw_amount = api_data.get("amount") or api_data.get("transactionAmount") or api_data.get("total") or 0.0
+                if isinstance(raw_amount, str):
+                    raw_amount = raw_amount.replace(',', '')
+                verified_amount = float(raw_amount)
                 
-                # 🟢 THE FIX: UNIVERSAL RAW DATA SEARCH
-                # Converts the entire JSON response to a spaceless uppercase string
-                api_raw_data = str(api_data).upper().replace(" ", "")
+                receiver_name = str(api_data.get("receiverName", "")).upper()
                 
-                # 2. DESTINATION ACCOUNT VALIDATION
+                # Convert the entire API response to a string to easily search for account numbers 
+                api_response_string = str(api_data).replace(" ", "")
+                
+                # 2. DESTINATION ACCOUNT VALIDATION (Name OR Account Number)
                 is_valid_destination = False
                 
-                # Check if the name exists ANYWHERE in the API response
-                for valid_name in VALID_MERCHANT_NAMES:
-                    if valid_name.upper().replace(" ", "") in api_raw_data:
+                # First, check if the account number is anywhere on the receipt
+                for valid_account in VALID_MERCHANT_ACCOUNTS:
+                    if valid_account in api_response_string:
                         is_valid_destination = True
                         break
                 
-                # Check if the core 9-digit account number exists ANYWHERE in the API response
+                # Second, check if the name matches (as a backup)
                 if not is_valid_destination:
-                    for valid_account in VALID_MERCHANT_ACCOUNTS:
-                        core_account = valid_account[-9:] if len(valid_account) >= 9 else valid_account
-                        if core_account in api_raw_data:
+                    for valid_name in VALID_MERCHANT_NAMES:
+                        if valid_name.upper() in receiver_name:
                             is_valid_destination = True
                             break
                 
