@@ -37,17 +37,17 @@ VERIFIER_API_KEY      = os.getenv("VERIFIER_API_KEY", "")
 # ---------------------------------------------------------------------------
 # 🛡️ THE DESTINATION CHECKER (SECURITY SETTINGS)
 # ---------------------------------------------------------------------------
-# Replace these with your exact official names registered to Telebirr/CBE
+# Exact official names registered to your platforms
 VALID_MERCHANT_NAMES = [
     "Henok Mebrate",
     "Bereket Alemayehu"
 ]
 
-# Replace these with your exact Telebirr, CBE, or Dashen account numbers
+# Exact account numbers for verification
 VALID_MERCHANT_ACCOUNTS = [
-    "",           
-    "1000539559927",    
-    "0919184337"        
+    "0919184337",       # Telebirr & CBE Birr (Bereket)
+    "1000539559927",    # CBE (Henok)
+    "0723191843"        # M-Pesa (Bereket)
 ]
 
 # ---------------------------------------------------------------------------
@@ -226,9 +226,12 @@ STRINGS = {
         "api_error": "🚨 *System Error:*\nBank verification services are currently experiencing delays. Please try again later.",
         "invite_msg": "🎁 *Invite Friends & Earn!*\n\nShare this bot with your friends and earn rewards when they play.\n\nYour Invite Link:\n`https://t.me/ChelaBingoBot?start={}`",
         "support_msg": "🎧 *CHELA Bingo Support*\n\nNeed help with a deposit, withdrawal, or a game issue? Our team is here 24/7.\n\nContact us directly: @ChelaSupport",
-        # 🟢 UPDATED: HTML Blockquote format for beautiful UI
-        "inst_telebirr": "Telebirr Account\n\n<code>894921</code>\n\n<blockquote>1. Send {} ETB to the Telebirr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from Telebirr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the Telebirr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
-        "inst_cbe": "CBE Account\n\n<code>1000481948212</code>\n\n<blockquote>1. Send {} ETB to the CBE account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from the bank containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the CBE account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
+        
+        # 🟢 HTML Blockquote format instructions for ALL providers
+        "inst_telebirr": "Telebirr Account\n\n<code>0919184337</code>\n\n<blockquote>1. Send {} ETB to the Telebirr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from Telebirr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the Telebirr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
+        "inst_cbe": "CBE Account\n\n<code>1000539559927</code>\n\n<blockquote>1. Send {} ETB to the CBE account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from the bank containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the CBE account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
+        "inst_cbe_birr": "CBE Birr Account\n\n<code>0919184337</code>\n\n<blockquote>1. Send {} ETB to the CBE Birr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from CBE Birr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the CBE Birr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
+        "inst_mpesa": "M-Pesa Account\n\n<code>0723191843</code>\n\n<blockquote>1. Send {} ETB to the M-Pesa account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from M-Pesa containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the M-Pesa account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
     },
     "am": {
         "welcome_back": "🎱 *ቼላ ቢንጎ (CHELA Bingo)*\n\nወደ መጫወቻው አዳራሽ በደህና መጡ! ምዝገባዎ ተጠናቋል።\n\n• የቢንጎ መተግበሪያውን ለመክፈት *PLAY CHELA BINGO* የሚለውን ይጫኑ።\n• ሂሳብዎን ከታች ባለው መቆጣጠሪያ ማስተዳደር ይችላሉ።",
@@ -258,9 +261,12 @@ STRINGS = {
         "api_error": "🚨 *የስርዓት መቆራረጥ:*\nየባንክ ማረጋገጫ መስመሮች ስራ በዝቶባቸዋል። እባክዎ ከጥቂት ደቂቃዎች በኋላ እንደገና ይሞክሩ።",
         "invite_msg": "🎁 *ጓደኞችዎን ይጋብዙ!*\n\nይህን ቦት ለጓደኞችዎ በማጋራት ሲጫወቱ ሽልማቶችን ያግኙ።\n\nየመጋበዣ ሊንክዎ:\n`https://t.me/ChelaBingoBot?start={}`",
         "support_msg": "🎧 *የቼላ ቢንጎ ድጋፍ ማዕከል*\n\nስለ ክፍያ፣ ገንዘብ ማውጣት ወይም ጨዋታ እርዳታ ይፈልጋሉ? ቡድናችን 24/7 ዝግጁ ነው።\n\nያነጋግሩን: @ChelaSupport",
-        # 🟢 UPDATED: HTML Blockquote format based explicitly on the screenshot text
+        
+        # 🟢 HTML Blockquote format instructions for ALL providers
         "inst_telebirr": "የቴሌብር አካውንት\n\n<code>0919184337</code>\n\n<blockquote>1. ከላይ ባለው የቴሌብር አካውንት {}ብር ያስገቡ\n\n2. የምትልኩት የገንዘብ መጠን እና እዚ ላይ እንዲሞላልዎ የምትፈልጉት የብር መጠን ተመሳሳይ መሆኑን እርግጠኛ ይሁኑ\n\n3. ብሩን ስትልኩ የከፈላችሁበትን መረጃ የያዘ አጭር የፅሁፍ መልክት(sms) ከቴሌብር ይደርስዎታል\n\n4. የደረሳችሁን አጭር የፅሁፍ መልክት(sms) ሙሉዉን ኮፒ(copy) በማረግ ከታች ባለው የቴሌግራም የፅሁፍ ማሰፈሪያው ላይ ፔስት(paste) በማረግ ይላኩት\n\nማሳሰቢያ፡ ዲፓዚት ባረጉ ቁጥር ቦቱ የሚያገናኛቹ ኤጀንቶች ስለሚለየው ከላይ ወደሚሰጠው የቴሌብር አካውንት ብቻ ብር መላካችሁን እርግጠኛ ይሁኑ:: ዲፓዚት ስታረጉ ቦቱ ከሚያገናኛቹ ኤጀንት ውጪ ወደ ሌላ ኤጀንት ብር ከላካቹ ቦቱ 2% ቆርጦ ይልክላችኋል::</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
         "inst_cbe": "የኢትዮጵያ ንግድ ባንክ (CBE) አካውንት\n\n<code>1000539559927</code>\n\n<blockquote>1. ከላይ ባለው የኢትዮጵያ ንግድ ባንክ አካውንት {}ብር ያስገቡ\n\n2. የምትልኩት የገንዘብ መጠን እና እዚ ላይ እንዲሞላልዎ የምትፈልጉት የብር መጠን ተመሳሳይ መሆኑን እርግጠኛ ይሁኑ\n\n3. ብሩን ስትልኩ የከፈላችሁበትን መረጃ የያዘ አጭር የፅሁፍ መልክት(sms) ከባንኩ ይደርስዎታል\n\n4. የደረሳችሁን አጭር የፅሁፍ መልክት(sms) ሙሉዉን ኮፒ(copy) በማረግ ከታች ባለው የቴሌግራም የፅሁፍ ማሰፈሪያው ላይ ፔስት(paste) በማረግ ይላኩት\n\nማሳሰቢያ፡ ዲፓዚት ባረጉ ቁጥር ቦቱ የሚያገናኛቹ ኤጀንቶች ስለሚለየው ከላይ ወደሚሰጠው የባንክ አካውንት ብቻ ብር መላካችሁን እርግጠኛ ይሁኑ:: ዲፓዚት ስታረጉ ቦቱ ከሚያገናኛቹ ኤጀንት ውጪ ወደ ሌላ ኤጀንት ብር ከላካቹ ቦቱ 2% ቆርጦ ይልክላችኋል::</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
+        "inst_cbe_birr": "የሲቢኢ ብር (CBE Birr) አካውንት\n\n<code>0919184337</code>\n\n<blockquote>1. ከላይ ባለው የሲቢኢ ብር አካውንት {}ብር ያስገቡ\n\n2. የምትልኩት የገንዘብ መጠን እና እዚ ላይ እንዲሞላልዎ የምትፈልጉት የብር መጠን ተመሳሳይ መሆኑን እርግጠኛ ይሁኑ\n\n3. ብሩን ስትልኩ የከፈላችሁበትን መረጃ የያዘ አጭር የፅሁፍ መልክት(sms) ከሲቢኢ ብር ይደርስዎታል\n\n4. የደረሳችሁን አጭር የፅሁፍ መልክት(sms) ሙሉዉን ኮፒ(copy) በማረግ ከታች ባለው የቴሌግራም የፅሁፍ ማሰፈሪያው ላይ ፔስት(paste) በማረግ ይላኩት\n\nማሳሰቢያ፡ ዲፓዚት ባረጉ ቁጥር ቦቱ የሚያገናኛቹ ኤጀንቶች ስለሚለየው ከላይ ወደሚሰጠው የሲቢኢ ብር አካውንት ብቻ ብር መላካችሁን እርግጠኛ ይሁኑ:: ዲፓዚት ስታረጉ ቦቱ ከሚያገናኛቹ ኤጀንት ውጪ ወደ ሌላ ኤጀንት ብር ከላካቹ ቦቱ 2% ቆርጦ ይልክላችኋል::</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
+        "inst_mpesa": "የኤም-ፔሳ (M-Pesa) አካውንት\n\n<code>0723191843</code>\n\n<blockquote>1. ከላይ ባለው የኤም-ፔሳ አካውንት {}ብር ያስገቡ\n\n2. የምትልኩት የገንዘብ መጠን እና እዚ ላይ እንዲሞላልዎ የምትፈልጉት የብር መጠን ተመሳሳይ መሆኑን እርግጠኛ ይሁኑ\n\n3. ብሩን ስትልኩ የከፈላችሁበትን መረጃ የያዘ አጭር የፅሁፍ መልክት(sms) ከኤም-ፔሳ ይደርስዎታል\n\n4. የደረሳችሁን አጭር የፅሁፍ መልክት(sms) ሙሉዉን ኮፒ(copy) በማረግ ከታች ባለው የቴሌግራም የፅሁፍ ማሰፈሪያው ላይ ፔስት(paste) በማረግ ይላኩት\n\nማሳሰቢያ፡ ዲፓዚት ባረጉ ቁጥር ቦቱ የሚያገናኛቹ ኤጀንቶች ስለሚለየው ከላይ ወደሚሰጠው የኤም-ፔሳ አካውንት ብቻ ብር መላካችሁን እርግጠኛ ይሁኑ:: ዲፓዚት ስታረጉ ቦቱ ከሚያገናኛቹ ኤጀንት ውጪ ወደ ሌላ ኤጀንት ብር ከላካቹ ቦቱ 2% ቆርጦ ይልክላችኋል::</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
     }
 }
 
@@ -302,11 +308,12 @@ def cancel_reply_keyboard(lang: str) -> ReplyKeyboardMarkup:
 
 def payment_methods_markup() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
+    # Exclusively providing the 4 valid payment options
     kb.add(
         InlineKeyboardButton("Telebirr 📱", callback_data="dep_prov|telebirr"),
-        InlineKeyboardButton("CBE 🏦", callback_data="dep_prov|cbe"),
-        InlineKeyboardButton("Dashen Bank 🏛️", callback_data="dep_prov|dashen"),
-        InlineKeyboardButton("Bank of Abyssinia 🦁", callback_data="dep_prov|abyssinia"),
+        InlineKeyboardButton("CBE 🏦", callback_data="dep_prov|cbe")
+    )
+    kb.add(
         InlineKeyboardButton("CBE Birr 💵", callback_data="dep_prov|cbe_birr"),
         InlineKeyboardButton("M-Pesa 💸", callback_data="dep_prov|mpesa")
     )
@@ -574,19 +581,14 @@ def handle_callback(call):
         
         set_state(chat_id, STATE_AWAITING_TXN_SMS)
         
-        # 🟢 HTML FORMATTING ISOLATION: Parses only the instruction message to build the beautiful UI
-        if provider == "telebirr":
-            inst_txt = STRINGS[lang]["inst_telebirr"].format(amount)
-        elif provider == "cbe":
-            inst_txt = STRINGS[lang]["inst_cbe"].format(amount)
-        else:
-            inst_txt = f"⚙️ <b>{provider.upper()} DEPOSIT INSTRUCTION</b>\n\nPlease transfer <b>{amount} ETB</b> to our verified account system and paste the receipt details directly below:"
+        # 🟢 Dynamic HTML Routing for ALL 4 options
+        inst_txt = STRINGS[lang][f"inst_{provider}"].format(amount)
 
         bot.send_message(
             chat_id, 
             inst_txt, 
             reply_markup=cancel_reply_keyboard(lang),
-            parse_mode="HTML"  # <--- Triggers the Telegram blockquote and copyable font feature
+            parse_mode="HTML"
         )
 
     elif data == "action_withdraw":
@@ -779,19 +781,14 @@ def handle_text(message):
             
             set_state(chat_id, STATE_AWAITING_TXN_SMS)
             
-            # 🟢 HTML FORMATTING ISOLATION: Parses only the instruction message to build the beautiful UI
-            if provider == "telebirr":
-                inst_txt = STRINGS[lang]["inst_telebirr"].format(amount)
-            elif provider == "cbe":
-                inst_txt = STRINGS[lang]["inst_cbe"].format(amount)
-            else:
-                inst_txt = f"⚙️ <b>{provider.upper()} DEPOSIT INSTRUCTION</b>\n\nPlease transfer <b>{amount} ETB</b> to our verified account system and paste the receipt details directly below:"
+            # 🟢 Dynamic HTML Routing for ALL 4 options
+            inst_txt = STRINGS[lang][f"inst_{provider}"].format(amount)
 
             bot.send_message(
                 chat_id, 
                 inst_txt, 
                 reply_markup=cancel_reply_keyboard(lang),
-                parse_mode="HTML"  # <--- Triggers the Telegram blockquote and copyable font feature
+                parse_mode="HTML"
             )
 
         elif state == STATE_AWAITING_WITHDRAW:
