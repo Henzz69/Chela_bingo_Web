@@ -342,22 +342,19 @@ def remove_keyboard() -> ReplyKeyboardRemove:
 def _extract_transaction_id(text: str) -> str:
     text_clean = text.strip().upper()
     
-    # 🟢 THE FIX 1: CBE Dynamic Range Extractor
-    # Captures the FULL ID length, regardless of appended URL parameters (10 to 25 characters)
-    cbe_match = re.search(r'\b(FT[A-Z0-9]{10,25})\b', text_clean)
-    if not cbe_match:
-        # Failsafe: if the ID is buried inside a raw ?id= parameter without boundaries
-        cbe_match = re.search(r'ID=(FT[A-Z0-9]{10,25})', text_clean)
-    
+    # 🟢 FIX 1: Strict CBE Slicing
+    # Hunts strictly for FT followed by exactly 10 alphanumeric characters (12 total).
+    # This completely ignores any extra tracking numbers appended to URLs.
+    cbe_match = re.search(r'(FT[A-Z0-9]{10})', text_clean)
     if cbe_match:
         return cbe_match.group(1)
         
-    # 🟢 THE FIX 2: Link Sterilization
-    # Completely destroys URLs so the regex never accidentally locks onto a Google Forms ID
+    # 🟢 FIX 2: URL Sterilization
+    # Destroys all URLs in the message so the regex doesn't accidentally lock onto Google Form IDs
     text_no_urls = re.sub(r'HTTPS?://\S+', '', text_clean)
     
-    # Standard Wallet extraction (Telebirr/M-Pesa) -> Forces a match that MUST contain BOTH numbers and letters
-    match = re.search(r'\b(?=.*[0-9])(?=.*[A-Z])[A-Z0-9]{8,20}\b', text_no_urls)
+    # Standard Wallet extraction (Telebirr/M-Pesa)
+    match = re.search(r'\b(?=.*[0-9])(?=.*[A-Z])[A-Z0-9]{8,12}\b', text_no_urls)
     if match:
         return match.group(0)
         
