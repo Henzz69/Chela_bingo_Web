@@ -157,6 +157,7 @@ if not MINI_APP_URL or "your-deployed-url" in MINI_APP_URL:
 # BOT INIT & MULTI-LANGUAGE STATE
 # ---------------------------------------------------------------------------
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
+# 🟢 DROPS PENDING UPDATES TO SEVER GHOST INSTANCES
 bot.delete_webhook(drop_pending_updates=True)
 
 try:
@@ -227,7 +228,6 @@ STRINGS = {
         "invite_msg": "🎁 *Invite Friends & Earn!*\n\nShare this bot with your friends and earn rewards when they play.\n\nYour Invite Link:\n`https://t.me/ChelaBingoBot?start={}`",
         "support_msg": "🎧 *CHELA Bingo Support*\n\nNeed help with a deposit, withdrawal, or a game issue? Our team is here 24/7.\n\nContact us directly: @ChelaSupport",
         
-        # 🟢 HTML Blockquote format instructions for ALL providers
         "inst_telebirr": "Telebirr Account\n\n<code>0919184337</code>\n\n<blockquote>1. Send {} ETB to the Telebirr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from Telebirr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the Telebirr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
         "inst_cbe": "CBE Account\n\n<code>1000539559927</code>\n\n<blockquote>1. Send {} ETB to the CBE account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from the bank containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the CBE account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
         "inst_cbe_birr": "CBE Birr Account\n\n<code>0919184337</code>\n\n<blockquote>1. Send {} ETB to the CBE Birr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from CBE Birr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the CBE Birr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
@@ -262,7 +262,6 @@ STRINGS = {
         "invite_msg": "🎁 *ጓደኞችዎን ይጋብዙ!*\n\nይህን ቦት ለጓደኞችዎ በማጋራት ሲጫወቱ ሽልማቶችን ያግኙ።\n\nየመጋበዣ ሊንክዎ:\n`https://t.me/ChelaBingoBot?start={}`",
         "support_msg": "🎧 *የቼላ ቢንጎ ድጋፍ ማዕከል*\n\nስለ ክፍያ፣ ገንዘብ ማውጣት ወይም ጨዋታ እርዳታ ይፈልጋሉ? ቡድናችን 24/7 ዝግጁ ነው።\n\nያነጋግሩን: @ChelaSupport",
         
-        # 🟢 HTML Blockquote format instructions for ALL providers
         "inst_telebirr": "የቴሌብር አካውንት\n\n<code>0919184337</code>\n\n<blockquote>1. ከላይ ባለው የቴሌብር አካውንት {}ብር ያስገቡ\n\n2. የምትልኩት የገንዘብ መጠን እና እዚ ላይ እንዲሞላልዎ የምትፈልጉት የብር መጠን ተመሳሳይ መሆኑን እርግጠኛ ይሁኑ\n\n3. ብሩን ስትልኩ የከፈላችሁበትን መረጃ የያዘ አጭር የፅሁፍ መልክት(sms) ከቴሌብር ይደርስዎታል\n\n4. የደረሳችሁን አጭር የፅሁፍ መልክት(sms) ሙሉዉን ኮፒ(copy) በማረግ ከታች ባለው የቴሌግራም የፅሁፍ ማሰፈሪያው ላይ ፔስት(paste) በማረግ ይላኩት\n\nማሳሰቢያ፡ ዲፓዚት ባረጉ ቁጥር ቦቱ የሚያገናኛቹ ኤጀንቶች ስለሚለየው ከላይ ወደሚሰጠው የቴሌብር አካውንት ብቻ ብር መላካችሁን እርግጠኛ ይሁኑ:: ዲፓዚት ስታረጉ ቦቱ ከሚያገናኛቹ ኤጀንት ውጪ ወደ ሌላ ኤጀንት ብር ከላካቹ ቦቱ 2% ቆርጦ ይልክላችኋል::</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
         "inst_cbe": "የኢትዮጵያ ንግድ ባንክ (CBE) አካውንት\n\n<code>1000539559927</code>\n\n<blockquote>1. ከላይ ባለው የኢትዮጵያ ንግድ ባንክ አካውንት {}ብር ያስገቡ\n\n2. የምትልኩት የገንዘብ መጠን እና እዚ ላይ እንዲሞላልዎ የምትፈልጉት የብር መጠን ተመሳሳይ መሆኑን እርግጠኛ ይሁኑ\n\n3. ብሩን ስትልኩ የከፈላችሁበትን መረጃ የያዘ አጭር የፅሁፍ መልክት(sms) ከባንኩ ይደርስዎታል\n\n4. የደረሳችሁን አጭር የፅሁፍ መልክት(sms) ሙሉዉን ኮፒ(copy) በማረግ ከታች ባለው የቴሌግራም የፅሁፍ ማሰፈሪያው ላይ ፔስት(paste) በማረግ ይላኩት\n\nማሳሰቢያ፡ ዲፓዚት ባረጉ ቁጥር ቦቱ የሚያገናኛቹ ኤጀንቶች ስለሚለየው ከላይ ወደሚሰጠው የባንክ አካውንት ብቻ ብር መላካችሁን እርግጠኛ ይሁኑ:: ዲፓዚት ስታረጉ ቦቱ ከሚያገናኛቹ ኤጀንት ውጪ ወደ ሌላ ኤጀንት ብር ከላካቹ ቦቱ 2% ቆርጦ ይልክላችኋል::</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
         "inst_cbe_birr": "የሲቢኢ ብር (CBE Birr) አካውንት\n\n<code>0919184337</code>\n\n<blockquote>1. ከላይ ባለው የሲቢኢ ብር አካውንት {}ብር ያስገቡ\n\n2. የምትልኩት የገንዘብ መጠን እና እዚ ላይ እንዲሞላልዎ የምትፈልጉት የብር መጠን ተመሳሳይ መሆኑን እርግጠኛ ይሁኑ\n\n3. ብሩን ስትልኩ የከፈላችሁበትን መረጃ የያዘ አጭር የፅሁፍ መልክት(sms) ከሲቢኢ ብር ይደርስዎታል\n\n4. የደረሳችሁን አጭር የፅሁፍ መልክት(sms) ሙሉዉን ኮፒ(copy) በማረግ ከታች ባለው የቴሌግራም የፅሁፍ ማሰፈሪያው ላይ ፔስት(paste) በማረግ ይላኩት\n\nማሳሰቢያ፡ ዲፓዚት ባረጉ ቁጥር ቦቱ የሚያገናኛቹ ኤጀንቶች ስለሚለየው ከላይ ወደሚሰጠው የሲቢኢ ብር አካውንት ብቻ ብር መላካችሁን እርግጠኛ ይሁኑ:: ዲፓዚት ስታረጉ ቦቱ ከሚያገናኛቹ ኤጀንት ውጪ ወደ ሌላ ኤጀንት ብር ከላካቹ ቦቱ 2% ቆርጦ ይልክላችኋል::</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
@@ -308,7 +307,6 @@ def cancel_reply_keyboard(lang: str) -> ReplyKeyboardMarkup:
 
 def payment_methods_markup() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
-    # Exclusively providing the 4 valid payment options
     kb.add(
         InlineKeyboardButton("Telebirr 📱", callback_data="dep_prov|telebirr"),
         InlineKeyboardButton("CBE 🏦", callback_data="dep_prov|cbe")
@@ -342,18 +340,15 @@ def remove_keyboard() -> ReplyKeyboardRemove:
 def _extract_transaction_id(text: str) -> str:
     text_clean = text.strip().upper()
     
-    # 🟢 FIX 1: Strict CBE Slicing
-    # Hunts strictly for FT followed by exactly 10 alphanumeric characters (12 total).
-    # This completely ignores any extra tracking numbers appended to URLs.
+    # CBE Surgical Strike
     cbe_match = re.search(r'(FT[A-Z0-9]{10})', text_clean)
     if cbe_match:
         return cbe_match.group(1)
         
-    # 🟢 FIX 2: URL Sterilization
-    # Destroys all URLs in the message so the regex doesn't accidentally lock onto Google Form IDs
+    # URL Sterilization
     text_no_urls = re.sub(r'HTTPS?://\S+', '', text_clean)
     
-    # Standard Wallet extraction (Telebirr/M-Pesa)
+    # Standard Wallet extraction
     match = re.search(r'\b(?=.*[0-9])(?=.*[A-Z])[A-Z0-9]{8,12}\b', text_no_urls)
     if match:
         return match.group(0)
@@ -362,10 +357,9 @@ def _extract_transaction_id(text: str) -> str:
     return parts[0] if parts else text_clean
 
 # ---------------------------------------------------------------------------
-# RECURSIVE DATA HUNTER (THE BULLETPROOF JSON PARSER)
+# RECURSIVE DATA HUNTER
 # ---------------------------------------------------------------------------
 def _find_amount_in_json(data) -> float:
-    """Recursively searches the entire JSON tree for any amount parameter."""
     found_amounts = []
     keys_to_look = ["amount", "transactionamount", "total", "value", "paidamount"]
 
@@ -386,7 +380,6 @@ def _find_amount_in_json(data) -> float:
                 search_dict(item)
 
     search_dict(data)
-    # Return the largest amount found to bypass tiny values like "serviceFee" or "tax"
     return max(found_amounts) if found_amounts else 0.0
 
 # ---------------------------------------------------------------------------
@@ -616,7 +609,6 @@ def handle_callback(call):
         
         set_state(chat_id, STATE_AWAITING_TXN_SMS)
         
-        # 🟢 Dynamic HTML Routing for ALL 4 options
         inst_txt = STRINGS[lang][f"inst_{provider}"].format(amount)
 
         bot.send_message(
@@ -697,31 +689,31 @@ def handle_text(message):
             response = requests.post(url, json=payload, headers=headers, timeout=25)
             api_data = response.json()
 
-            if api_data.get("success"):
+            # 🟢 THE FIX: Strictly follows the API owner's {"ok": true} payload specification
+            if api_data.get("ok") or api_data.get("success"):
                 
-                # The Recursive Data Hunter finds amounts hidden deep in nested API JSON
-                verified_amount = _find_amount_in_json(api_data)
+                # Natively isolates the verifier owner's nested data block
+                payload_data = api_data.get("data", api_data)
                 
-                receiver_name = str(api_data.get("receiverName", "")).upper()
-                api_response_string = str(api_data).replace(" ", "")
+                verified_amount = _find_amount_in_json(payload_data)
+                receiver_name = str(payload_data.get("receiverName", payload_data.get("payerName", ""))).upper()
+                api_response_string = str(payload_data).replace(" ", "")
                 
                 # 2. DESTINATION ACCOUNT VALIDATION (Name OR Account Number)
                 is_valid_destination = False
                 
-                # First, check if the account number is anywhere on the receipt
                 for valid_account in VALID_MERCHANT_ACCOUNTS:
                     if valid_account in api_response_string:
                         is_valid_destination = True
                         break
                 
-                # Second, check if the name matches (as a backup)
                 if not is_valid_destination:
                     for valid_name in VALID_MERCHANT_NAMES:
-                        if valid_name.upper() in receiver_name:
+                        name_parts = valid_name.upper().split()
+                        if all(part in api_response_string for part in name_parts) or valid_name.upper() in receiver_name:
                             is_valid_destination = True
                             break
                 
-                # If neither the name nor the account number belongs to you, reject it!
                 if not is_valid_destination:
                     _release_transaction(clean_txn_id)
                     bot.delete_message(chat_id, wait_msg.message_id)
@@ -791,7 +783,6 @@ def handle_text(message):
 
     if state in (STATE_AWAITING_DEPOSIT, STATE_AWAITING_WITHDRAW):
         try:
-            # Handles text inputs with commas like "1,000" gracefully
             clean_text_amount = text.replace(',', '')
             amount = float(clean_text_amount)
             if amount <= 0:
@@ -812,7 +803,6 @@ def handle_text(message):
             
             set_state(chat_id, STATE_AWAITING_TXN_SMS)
             
-            # 🟢 Dynamic HTML Routing for ALL 4 options
             inst_txt = STRINGS[lang][f"inst_{provider}"].format(amount)
 
             bot.send_message(
