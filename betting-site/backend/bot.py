@@ -4,7 +4,7 @@ CHELA Bingo - Telegram Bot
 Handles: /start → Language Selection → Contact Registration → Play, Deposit, Withdraw, Balance.
 Bilingual Support: English & Amharic (አማርኛ)
 Automated Verification: Integrated with verify.leul.et API
-Security: Bulletproof Optimistic Locking, Destination Validation, & Fail-Closed Logic
+Security: Bulletproof Optimistic Locking, Universal Destination Validation, & Fail-Closed Logic
 """
 
 import os
@@ -671,24 +671,25 @@ def handle_text(message):
 
             if api_data.get("success"):
                 verified_amount = float(api_data.get("transactionAmount", api_data.get("total", 0.0)))
-                receiver_name = str(api_data.get("receiverName", "")).upper()
                 
-                # Convert the entire API response to a string to easily search for account numbers 
-                api_response_string = str(api_data).replace(" ", "")
+                # 🟢 THE FIX: UNIVERSAL RAW DATA SEARCH
+                # Converts the entire JSON response to a spaceless uppercase string
+                api_raw_data = str(api_data).upper().replace(" ", "")
                 
-                # 2. DESTINATION ACCOUNT VALIDATION (Name OR Account Number)
+                # 2. DESTINATION ACCOUNT VALIDATION
                 is_valid_destination = False
                 
-                # First, check if the account number is anywhere on the receipt
-                for valid_account in VALID_MERCHANT_ACCOUNTS:
-                    if valid_account in api_response_string:
+                # Check if the name exists ANYWHERE in the API response
+                for valid_name in VALID_MERCHANT_NAMES:
+                    if valid_name.upper().replace(" ", "") in api_raw_data:
                         is_valid_destination = True
                         break
                 
-                # Second, check if the name matches (as a backup)
+                # Check if the core 9-digit account number exists ANYWHERE in the API response
                 if not is_valid_destination:
-                    for valid_name in VALID_MERCHANT_NAMES:
-                        if valid_name.upper() in receiver_name:
+                    for valid_account in VALID_MERCHANT_ACCOUNTS:
+                        core_account = valid_account[-9:] if len(valid_account) >= 9 else valid_account
+                        if core_account in api_raw_data:
                             is_valid_destination = True
                             break
                 
