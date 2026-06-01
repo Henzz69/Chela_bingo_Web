@@ -4,7 +4,7 @@ CHELA Bingo - Telegram Bot
 Handles: /start → Language Selection → Contact Registration → Play, Deposit, Withdraw, Balance.
 Bilingual Support: English & Amharic (አማርኛ)
 Automated Verification: Integrated with verify.leul.et API
-Security: Bulletproof Optimistic Locking, Advanced Destination Validation, & Fail-Closed Logic
+Security: Bulletproof Optimistic Locking, Universal Destination Validation, & Fail-Closed Logic
 """
 
 import os
@@ -342,17 +342,42 @@ def remove_keyboard() -> ReplyKeyboardRemove:
 def _extract_transaction_id(text: str) -> str:
     text_clean = text.strip().upper()
     
+    # 🟢 FIX 2: Bulletproof Regex targeting exactly 8 to 15 alphanumeric characters
+    # CBE uses FT + numbers (usually 12-14 chars). Telebirr/Mpesa use 10-12 chars.
+    match = re.search(r'\b([A-Z0-9]{8,15})\b', text_clean)
+    if match:
+        return match.group(1)
+        
     parts = text_clean.split()
-    
-    cbe_match = re.search(r'\b(FT[A-Z0-9]{10,20})\b', text_clean)
-    if cbe_match:
-        return cbe_match.group(1)
-        
-    telebirr_match = re.search(r'\b([A-Z0-9]{10})\b', text_clean)
-    if telebirr_match:
-        return telebirr_match.group(1)
-        
     return parts[0] if parts else text_clean
+
+# ---------------------------------------------------------------------------
+# RECURSIVE DATA HUNTER (THE BULLETPROOF JSON PARSER)
+# ---------------------------------------------------------------------------
+def _find_amount_in_json(data) -> float:
+    """Recursively searches the entire JSON tree for any amount parameter."""
+    found_amounts = []
+    keys_to_look = ["amount", "transactionamount", "total", "value", "paidamount"]
+
+    def search_dict(d):
+        if isinstance(d, dict):
+            for k, v in d.items():
+                if str(k).lower() in keys_to_look:
+                    try:
+                        clean_val = re.search(r"[\d\.]+", str(v).replace(',', ''))
+                        if clean_val:
+                            found_amounts.append(float(clean_val.group(0)))
+                    except Exception:
+                        pass
+                elif isinstance(v, (dict, list)):
+                    search_dict(v)
+        elif isinstance(d, list):
+            for item in d:
+                search_dict(item)
+
+    search_dict(data)
+    # Return the largest amount found to bypass tiny values like "serviceFee" or "tax"
+    return max(found_amounts) if found_amounts else 0.0
 
 # ---------------------------------------------------------------------------
 # COMMAND HANDLERS
@@ -670,44 +695,30 @@ def handle_text(message):
             api_data = response.json()
 
             if api_data.get("success"):
-                # Robust Amount Parsing
-                raw_amount = api_data.get("amount") or api_data.get("transactionAmount") or api_data.get("total") or 0.0
-                if isinstance(raw_amount, str):
-                    raw_amount = raw_amount.replace(',', '')
-                verified_amount = float(raw_amount)
                 
-                # 🟢 THE FIX: BULLETPROOF DESTINATION VALIDATION
-                api_raw_data = str(api_data).upper()
+                # 🟢 FIX 1: THE RECURSIVE DATA HUNTER (Extracts nested amounts securely)
+                verified_amount = _find_amount_in_json(api_data)
+                
+                receiver_name = str(api_data.get("receiverName", "")).upper()
+                api_response_string = str(api_data).replace(" ", "")
+                
+                # 2. DESTINATION ACCOUNT VALIDATION (Name OR Account Number)
                 is_valid_destination = False
                 
-                # 1. Fragment Name Matching (Checks if "BEREKET" and "ALEMAYEHU" both exist anywhere)
-                for valid_name in VALID_MERCHANT_NAMES:
-                    name_parts = valid_name.upper().split()
-                    if all(part in api_raw_data for part in name_parts):
+                # First, check if the account number is anywhere on the receipt
+                for valid_account in VALID_MERCHANT_ACCOUNTS:
+                    if valid_account in api_response_string:
                         is_valid_destination = True
                         break
                 
-                # 2. Advanced Account & Masked Matching
+                # Second, check if the name matches (as a backup)
                 if not is_valid_destination:
-                    for valid_account in VALID_MERCHANT_ACCOUNTS:
-                        # Check full account (last 9 digits to ignore 251 vs 0 formatting)
-                        core_account = valid_account[-9:] if len(valid_account) >= 9 else valid_account
-                        if core_account in api_raw_data:
+                    for valid_name in VALID_MERCHANT_NAMES:
+                        if valid_name.upper() in receiver_name:
                             is_valid_destination = True
                             break
-                        
-                        # Check Masked Patterns (Telebirr often uses 0919****37)
-                        if len(valid_account) >= 10:
-                            first_four = valid_account[:4] # e.g., 0919
-                            last_two = valid_account[-2:]  # e.g., 37
-                            # Checking multiple potential mask patterns returned by banks
-                            if f"{first_four}****{last_two}" in api_raw_data or \
-                               f"{first_four}XXXX{last_two}" in api_raw_data or \
-                               f"{first_four}***{valid_account[-3:]}" in api_raw_data:
-                                is_valid_destination = True
-                                break
                 
-                # If neither the fragmented name nor the masked account number matched, reject it!
+                # If neither the name nor the account number belongs to you, reject it!
                 if not is_valid_destination:
                     _release_transaction(clean_txn_id)
                     bot.delete_message(chat_id, wait_msg.message_id)
