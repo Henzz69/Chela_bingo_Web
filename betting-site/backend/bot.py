@@ -342,11 +342,11 @@ def remove_keyboard() -> ReplyKeyboardRemove:
 def _extract_transaction_id(text: str) -> str:
     text_clean = text.strip().upper()
     
-    # 🟢 FIX 2: Bulletproof Regex targeting exactly 8 to 15 alphanumeric characters
-    # CBE uses FT + numbers (usually 12-14 chars). Telebirr/Mpesa use 10-12 chars.
-    match = re.search(r'\b([A-Z0-9]{8,15})\b', text_clean)
+    # 🟢 THE FIX: Smart Alphanumeric Regex
+    # Requires BOTH letters and numbers. Perfectly ignores pure English words like "TRANSFERRED".
+    match = re.search(r'\b(?=.*[0-9])(?=.*[A-Z])[A-Z0-9]{8,20}\b', text_clean)
     if match:
-        return match.group(1)
+        return match.group(0)
         
     parts = text_clean.split()
     return parts[0] if parts else text_clean
@@ -676,7 +676,9 @@ def handle_text(message):
 
         suffix_val = None
         text_parts = text.split()
-        if len(text_parts) > 1 and dep_info.get("provider") == "cbe":
+        
+        # 🟢 THE FIX: Safely route suffix ONLY if the user typed exactly a 2-word input manually.
+        if len(text_parts) == 2 and dep_info.get("provider") == "cbe":
             suffix_val = text_parts[1]
 
         wait_msg = bot.send_message(chat_id, STRINGS[lang]["checking_api"])
@@ -696,7 +698,7 @@ def handle_text(message):
 
             if api_data.get("success"):
                 
-                # 🟢 FIX 1: THE RECURSIVE DATA HUNTER (Extracts nested amounts securely)
+                # 🟢 THE FIX: The Recursive Data Hunter finds amounts hidden deep in nested API JSON
                 verified_amount = _find_amount_in_json(api_data)
                 
                 receiver_name = str(api_data.get("receiverName", "")).upper()
@@ -788,7 +790,9 @@ def handle_text(message):
 
     if state in (STATE_AWAITING_DEPOSIT, STATE_AWAITING_WITHDRAW):
         try:
-            amount = float(text)
+            # Handles text inputs with commas like "1,000" gracefully
+            clean_text_amount = text.replace(',', '')
+            amount = float(clean_text_amount)
             if amount <= 0:
                 raise ValueError
         except ValueError:
