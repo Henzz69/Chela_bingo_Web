@@ -157,7 +157,6 @@ if not MINI_APP_URL or "your-deployed-url" in MINI_APP_URL:
 # BOT INIT & MULTI-LANGUAGE STATE
 # ---------------------------------------------------------------------------
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
-# 🟢 DROPS PENDING UPDATES TO SEVER GHOST INSTANCES
 bot.delete_webhook(drop_pending_updates=True)
 
 try:
@@ -340,12 +339,12 @@ def remove_keyboard() -> ReplyKeyboardRemove:
 def _extract_transaction_id(text: str) -> str:
     text_clean = text.strip().upper()
     
-    # CBE Surgical Strike
+    # 🟢 CBE Surgical Strike: Hunts strictly for FT followed by exactly 10 alphanumeric characters.
     cbe_match = re.search(r'(FT[A-Z0-9]{10})', text_clean)
     if cbe_match:
         return cbe_match.group(1)
         
-    # URL Sterilization
+    # 🟢 URL Sterilization: Destroys all URLs so the regex doesn't accidentally lock onto Google Form IDs
     text_no_urls = re.sub(r'HTTPS?://\S+', '', text_clean)
     
     # Standard Wallet extraction
@@ -676,28 +675,48 @@ def handle_text(message):
             )
             return
 
+        provider_key = dep_info.get("provider", "telebirr")
+        
+        # 🟢 THE FIX: OWNER'S NATIVE ROUTING ARCHITECTURE
+        # Bypassing the universal router to use the exact dedicated endpoints and payloads 
+        # as structured in the vixen878/verifier-api repository.
+        if provider_key == "mpesa":
+            url = "https://verifyapi.leulzenebe.pro/verify/mpesa"
+            payload = {"receiptNumber": clean_txn_id}
+        elif provider_key == "cbe":
+            url = "https://verifyapi.leulzenebe.pro/verify/cbe"
+            payload = {"reference": clean_txn_id}
+            # Optional suffix extraction for CBE if manually appended
+            text_parts = text.split()
+            if len(text_parts) == 2:
+                payload["accountSuffix"] = text_parts[1]
+        elif provider_key == "cbe_birr":
+            url = "https://verifyapi.leulzenebe.pro/verify/cbebirr"
+            payload = {"reference": clean_txn_id}
+        else: # telebirr
+            url = "https://verifyapi.leulzenebe.pro/verify/telebirr"
+            payload = {"reference": clean_txn_id}
+
         wait_msg = bot.send_message(chat_id, STRINGS[lang]["checking_api"])
 
-        url = "https://verifyapi.leulzenebe.pro/verify"
         headers = {
             "x-api-key": VERIFIER_API_KEY,
             "Content-Type": "application/json"
         }
-        payload = {"reference": clean_txn_id}
 
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=25)
-            api_data = response.json()
 
-            # 🟢 THE FIX: Strictly follows the API owner's {"ok": true} payload specification
-            if api_data.get("ok") or api_data.get("success"):
+            # 🟢 NATIVE SUCCESS CHECK: Relies purely on the server's HTTP 200 validation
+            if response.status_code == 200:
+                api_data = response.json()
                 
                 # Natively isolates the verifier owner's nested data block
                 payload_data = api_data.get("data", api_data)
                 
                 verified_amount = _find_amount_in_json(payload_data)
                 receiver_name = str(payload_data.get("receiverName", payload_data.get("payerName", ""))).upper()
-                api_response_string = str(payload_data).replace(" ", "")
+                api_response_string = str(payload_data).replace(" ", "").upper()
                 
                 # 2. DESTINATION ACCOUNT VALIDATION (Name OR Account Number)
                 is_valid_destination = False
