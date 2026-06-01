@@ -342,9 +342,19 @@ def remove_keyboard() -> ReplyKeyboardRemove:
 def _extract_transaction_id(text: str) -> str:
     text_clean = text.strip().upper()
     
-    # 🟢 THE FIX: Smart Alphanumeric Regex
-    # Requires BOTH letters and numbers. Perfectly ignores pure English words like "TRANSFERRED".
-    match = re.search(r'\b(?=.*[0-9])(?=.*[A-Z])[A-Z0-9]{8,20}\b', text_clean)
+    # 🟢 THE FIX 1: CBE Surgical Strike
+    # Hunts strictly for FT followed by exactly 10 alphanumeric characters. 
+    # This cleanly slices the ID out of massive URLs and drops any junk numbers attached to it.
+    cbe_match = re.search(r'(FT[A-Z0-9]{10})', text_clean)
+    if cbe_match:
+        return cbe_match.group(1)
+        
+    # 🟢 THE FIX 2: Link Sterilization
+    # Destroys all URLs in the message so the regex doesn't accidentally lock onto Google Form IDs
+    text_no_urls = re.sub(r'HTTPS?://\S+', '', text_clean)
+    
+    # Standard Wallet extraction (Telebirr/M-Pesa)
+    match = re.search(r'\b(?=.*[0-9])(?=.*[A-Z])[A-Z0-9]{8,12}\b', text_no_urls)
     if match:
         return match.group(0)
         
@@ -674,13 +684,6 @@ def handle_text(message):
             )
             return
 
-        suffix_val = None
-        text_parts = text.split()
-        
-        # 🟢 THE FIX: Safely route suffix ONLY if the user typed exactly a 2-word input manually.
-        if len(text_parts) == 2 and dep_info.get("provider") == "cbe":
-            suffix_val = text_parts[1]
-
         wait_msg = bot.send_message(chat_id, STRINGS[lang]["checking_api"])
 
         url = "https://verifyapi.leulzenebe.pro/verify"
@@ -689,8 +692,6 @@ def handle_text(message):
             "Content-Type": "application/json"
         }
         payload = {"reference": clean_txn_id}
-        if suffix_val:
-            payload["suffix"] = suffix_val
 
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=25)
@@ -698,7 +699,7 @@ def handle_text(message):
 
             if api_data.get("success"):
                 
-                # 🟢 THE FIX: The Recursive Data Hunter finds amounts hidden deep in nested API JSON
+                # The Recursive Data Hunter finds amounts hidden deep in nested API JSON
                 verified_amount = _find_amount_in_json(api_data)
                 
                 receiver_name = str(api_data.get("receiverName", "")).upper()
