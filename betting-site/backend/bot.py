@@ -319,33 +319,38 @@ def remove_keyboard() -> ReplyKeyboardRemove:
     return ReplyKeyboardRemove()
 
 # ---------------------------------------------------------------------------
-# REUSABLE TRANSACTION PARSER (SECURED)
+# REUSABLE TRANSACTION PARSER (UNBYPASSABLE & STRICT)
 # ---------------------------------------------------------------------------
-def _extract_transaction_id(text: str) -> str:
-    text_clean = text.strip().upper()
+def _extract_transaction_id(text: str):
+    # 1. Destroy URLs entirely so they don't confuse the parser
+    text_no_urls = re.sub(r'https?://\S+|www\.\S+', ' ', text, flags=re.IGNORECASE)
     
-    # 1. URL Sterilization
-    text_no_urls = re.sub(r'HTTPS?://\S+', '', text_clean)
+    # 2. Scrub Punctuation: Replace all special characters with spaces
+    # This safely separates joined words like "DF25JAMIYR." into "DF25JAMIYR "
+    clean_text = re.sub(r'[^a-zA-Z0-9\s]', ' ', text_no_urls)
     
-    # 2. CBE Surgical Strike: Hunts strictly for FT followed by 10 alphanumeric chars
-    cbe_match = re.search(r'\b(FT[A-Z0-9]{10})\b', text_no_urls)
-    if cbe_match:
-        return cbe_match.group(1)
-        
-    # 3. Find ALL words exactly between 8 and 12 characters long
-    candidates = re.findall(r'\b[A-Z0-9]{8,12}\b', text_no_urls)
+    # 3. Split the text into a clean list of uppercase words
+    words = clean_text.upper().split()
     
-    # 4. Filter them: A valid ID MUST contain BOTH letters AND numbers
-    for word in candidates:
-        has_letter = any(c.isalpha() for c in word)
-        has_number = any(c.isdigit() for c in word)
-        
-        if has_letter and has_number:
-            return word 
+    # 4. Check for CBE specific format first (FT followed by 10 alphanumeric chars)
+    for word in words:
+        if word.startswith('FT') and len(word) == 12 and word.isalnum():
+            return word
             
-    # 5. Last resort fallback
-    parts = text_no_urls.split()
-    return parts[0] if parts else text_clean
+    # 5. Scan for standard Mobile Money / Bank IDs (Telebirr, M-Pesa, CBE Birr)
+    for word in words:
+        # Check if the length matches typical Ethiopian bank IDs
+        if 8 <= len(word) <= 12:
+            has_letter = any(char.isalpha() for char in word)
+            has_number = any(char.isdigit() for char in word)
+            
+            # The word MUST contain both letters AND numbers to be an ID
+            # This completely ignores phone numbers and regular dictionary words
+            if has_letter and has_number:
+                return word
+                
+    # 6. HARD GATE: If no valid ID is found, return None to stop the bot from guessing
+    return None
 
 # ---------------------------------------------------------------------------
 # COMMAND HANDLERS
@@ -409,6 +414,24 @@ def cmd_withdraw(message):
     lang = get_lang(chat_id)
     set_state(chat_id, STATE_AWAITING_WITHDRAW)
     bot.send_message(chat_id, STRINGS[lang]["enter_with_amount"], reply_markup=cancel_reply_keyboard(lang))
+
+# --- SECRET ADMIN DEBUG COMMAND ---
+@bot.message_handler(commands=["testsms"])
+def cmd_testsms(message):
+    if not is_admin(message.from_user.id):
+        return
+    
+    raw_text = message.text.replace("/testsms", "").strip()
+    if not raw_text:
+        bot.send_message(message.chat.id, "⚠️ Paste an SMS after the command.\nExample: `/testsms Dear Eyasu You have transferred...`")
+        return
+        
+    extracted_id = _extract_transaction_id(raw_text)
+    
+    if extracted_id:
+        bot.send_message(message.chat.id, f"✅ *SUCCESS!*\nThe bot strictly extracted: `{extracted_id}`")
+    else:
+        bot.send_message(message.chat.id, f"❌ *FAILED!*\nThe bot could not find a valid alphanumeric transaction ID in that text. It would have safely rejected this.")
 
 # ---------------------------------------------------------------------------
 # CONTACT REGISTRATION
@@ -519,12 +542,23 @@ def handle_text(message):
         bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
         return
 
-    # 🚀 X-RAY VERIFICATION ENGINE (DEEP LOGGING ACTIVE)
+    # 🚀 X-RAY VERIFICATION ENGINE
     if state == STATE_AWAITING_TXN_SMS:
         set_state(chat_id, STATE_IDLE)
         
-        raw_extracted_id = _extract_transaction_id(text)
-        clean_txn_id = re.sub(r'[^A-Z0-9]', '', raw_extracted_id.upper())
+        extracted_id = _extract_transaction_id(text)
+        
+        # 🚨 THE HARD GATE: Stop instantly if no ID is found in the SMS
+        if not extracted_id:
+            bot.send_message(
+                chat_id, 
+                "❌ *Invalid Text Format:*\nWe could not find a valid Transaction ID in your message. Please make sure you copy and paste the *entire* SMS from the bank.", 
+                reply_markup=remove_keyboard()
+            )
+            bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
+            return
+            
+        clean_txn_id = extracted_id
         
         dep_info = user_deposit_data.get(chat_id, {"provider": "telebirr", "amount": 0.0})
         expected_amount = float(dep_info.get("amount", 0.0))
