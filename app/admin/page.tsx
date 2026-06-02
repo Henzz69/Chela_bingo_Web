@@ -9,13 +9,15 @@ const MASTER_PASSWORD = "chelahebenki2026";
 
 type TimeScale = 'today' | 'week' | 'month' | 'all';
 
-interface Transaction {
+interface EnrichedTransaction {
   id: string;
   user_id: string;
   amount: number;
   tx_type: string;
   status: string;
   created_at: string;
+  display_name?: string;
+  phone?: string;
 }
 
 interface DashboardStats {
@@ -32,7 +34,6 @@ interface AdminStats {
 }
 
 export default function AdminDashboard() {
-  // 🔒 Password State
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [passInput, setPassInput] = useState('');
   const [passError, setPassError] = useState(false);
@@ -40,7 +41,10 @@ export default function AdminDashboard() {
   const [timeScale, setTimeScale] = useState<TimeScale>('today');
   const [stats, setStats] = useState<DashboardStats>({ deposits: 0, withdrawals: 0, gamesHosted: 0, netFlow: 0 });
   const [macroStats, setMacroStats] = useState<AdminStats | null>(null);
-  const [pendingTxs, setPendingTxs] = useState<Transaction[]>([]);
+  
+  const [pendingTxs, setPendingTxs] = useState<EnrichedTransaction[]>([]);
+  const [recentDeposits, setRecentDeposits] = useState<EnrichedTransaction[]>([]);
+  
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [processingTx, setProcessingTx] = useState<string | null>(null);
 
@@ -59,16 +63,18 @@ export default function AdminDashboard() {
       const isoStart = startDate.toISOString();
 
       try {
-        const { data: globalData, error: globalError } = await supabase.rpc('get_admin_stats');
-        if (!globalError && globalData) setMacroStats(globalData as AdminStats);
+        // Fetch Macro Stats
+        const { data: globalData } = await supabase.rpc('get_admin_stats');
+        if (globalData) setMacroStats(globalData as AdminStats);
 
-        const { data: pendingData } = await supabase
-          .from('transactions')
-          .select('*')
-          .eq('status', 'pending')
-          .order('created_at', { ascending: false });
-        if (pendingData) setPendingTxs(pendingData);
+        // Fetch Secure Enriched Transactions (Bypasses RLS)
+        const { data: txDataRpc } = await supabase.rpc('get_admin_transactions');
+        if (txDataRpc) {
+          setPendingTxs(txDataRpc.pending_withdrawals);
+          setRecentDeposits(txDataRpc.recent_deposits);
+        }
 
+        // Fetch Time-Scaled Metrics
         const { data: txData } = await supabase
           .from('transactions')
           .select('amount, tx_type')
@@ -125,15 +131,16 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🚀 ACTION HANDLERS
+  // 🚀 SECURE ACTION HANDLERS
   const handleApprove = async (txId: string) => {
     setProcessingTx(txId);
-    await supabase.from('transactions').update({ status: 'completed' }).eq('id', txId);
+    await supabase.rpc('admin_approve_withdrawal', { p_tx_id: txId });
     setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
     setProcessingTx(null);
   };
 
   const handleReject = async (txId: string, userId: string, amount: number) => {
+    if (!window.confirm("Reject this withdrawal and refund the user's wallet?")) return;
     setProcessingTx(txId);
     await supabase.rpc('admin_reject_withdrawal', {
         p_tx_id: txId,
@@ -144,22 +151,16 @@ export default function AdminDashboard() {
     setProcessingTx(null);
   };
 
-  // ==========================================
-  // RENDER 1: THE PASSWORD LOCK SCREEN
-  // ==========================================
   if (!isUnlocked) {
     return (
       <div className="min-h-screen bg-[#050505] flex items-center justify-center p-4 font-mono">
         <div className="bg-neutral-900 border border-neutral-800 p-8 rounded-3xl w-full max-w-sm text-center shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500"></div>
-          
           <div className="w-16 h-16 bg-neutral-950 border border-neutral-800 rounded-full mx-auto mb-6 flex items-center justify-center shadow-inner">
             <span className="text-2xl opacity-80">🔐</span>
           </div>
-          
           <h1 className="text-xl font-black tracking-widest text-white uppercase mb-2">Restricted Access</h1>
           <p className="text-neutral-500 text-xs mb-8">Enter authorization code to proceed.</p>
-          
           <form onSubmit={handleUnlock} className="flex flex-col gap-4">
             <input 
               type="password" 
@@ -181,12 +182,9 @@ export default function AdminDashboard() {
     );
   }
 
-  // ==========================================
-  // RENDER 2: SECURE DASHBOARD
-  // ==========================================
   return (
     <div className="min-h-screen bg-[#050505] text-neutral-100 p-4 md:p-8 font-mono overflow-y-auto">
-      <div className="max-w-5xl mx-auto space-y-8 pb-24">
+      <div className="max-w-6xl mx-auto space-y-8 pb-24">
         
         {/* Header */}
         <header className="flex items-center justify-between pb-4 border-b border-neutral-800">
@@ -231,101 +229,96 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* ⚡ THE ACTION CENTER: Pending Queue */}
-        <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg">
-          <div className="bg-neutral-900 border-b border-neutral-800 px-6 py-4 flex justify-between items-center">
-            <h2 className="text-lg font-black tracking-widest text-white flex items-center gap-2">
-              <span className="text-yellow-500">⚡</span> PENDING QUEUE
-            </h2>
-            <span className="bg-yellow-500/10 text-yellow-500 text-[10px] font-bold px-2 py-1 rounded border border-yellow-500/20 uppercase">
-              {pendingTxs.length} Requires Action
-            </span>
-          </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           
-          <div className="overflow-x-auto">
-            {pendingTxs.length === 0 ? (
-              <div className="p-8 text-center text-neutral-500 text-sm font-medium">All queues clear. No pending requests.</div>
-            ) : (
-              <table className="w-full text-left text-sm">
-                <thead className="text-[10px] uppercase text-neutral-500 bg-neutral-950/50">
-                  <tr>
-                    <th className="px-6 py-3 font-semibold">Time</th>
-                    <th className="px-6 py-3 font-semibold">User ID</th>
-                    <th className="px-6 py-3 font-semibold">Type</th>
-                    <th className="px-6 py-3 font-semibold text-right">Amount</th>
-                    <th className="px-6 py-3 font-semibold text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-800/50">
-                  <AnimatePresence>
-                    {pendingTxs.map((tx) => (
-                      <motion.tr key={tx.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="hover:bg-neutral-800/30 transition-colors">
-                        <td className="px-6 py-4 text-neutral-400 text-xs">{timeAgo(tx.created_at)}</td>
-                        <td className="px-6 py-4 font-mono text-neutral-300 text-xs">{tx.user_id}</td>
-                        <td className="px-6 py-4">
-                          <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-full border ${tx.tx_type === 'deposit' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-orange-500/10 text-orange-400 border-orange-500/20'}`}>
-                            {tx.tx_type}
-                          </span>
-                        </td>
-                        <td className={`px-6 py-4 text-right font-black ${tx.tx_type === 'deposit' ? 'text-emerald-400' : 'text-orange-400'}`}>
-                          {tx.amount.toLocaleString()} ETB
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          {processingTx === tx.id ? (
-                            <span className="text-neutral-500 text-xs animate-pulse">Processing...</span>
-                          ) : (
-                            <div className="flex justify-center gap-2">
-                              <button onClick={() => handleApprove(tx.id)} className="w-8 h-8 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 hover:bg-emerald-500 hover:text-black transition-colors" title="Approve & Complete">
-                                ✅
-                              </button>
-                              <button onClick={() => handleReject(tx.id, tx.user_id, tx.amount)} className="w-8 h-8 rounded bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition-colors" title="Reject & Refund">
-                                ❌
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </motion.tr>
-                    ))}
-                  </AnimatePresence>
-                </tbody>
-              </table>
-            )}
-          </div>
-        </section>
-
-        {/* ⏱️ TIME-SCALED FINANCIAL ANALYTICS */}
-        <div className="flex items-center justify-between pt-4">
-          <h2 className="text-sm font-bold tracking-widest text-neutral-400 uppercase">Financial Velocity</h2>
-          <div className="flex bg-neutral-900 border border-neutral-800 rounded-lg p-1">
-            {(['today', 'week', 'month', 'all'] as TimeScale[]).map((scale) => (
-              <button key={scale} onClick={() => setTimeScale(scale)}
-                className={`px-4 py-1.5 text-xs font-bold uppercase tracking-widest rounded-md transition-all ${timeScale === scale ? 'bg-emerald-500 text-black shadow-sm' : 'text-neutral-500 hover:text-neutral-300'}`}
-              >
-                {scale === 'week' ? '7D' : scale === 'month' ? '30D' : scale}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className={`grid grid-cols-1 md:grid-cols-4 gap-4 transition-opacity duration-300 ${isLoadingData ? 'opacity-50' : 'opacity-100'}`}>
-          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden flex flex-col justify-between">
-            <h3 className="text-neutral-500 text-[10px] font-black tracking-widest uppercase mb-2">Total Deposits</h3>
-            <div className="text-3xl font-black text-emerald-400">+{stats.deposits.toLocaleString()}</div>
-          </div>
-          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden flex flex-col justify-between">
-            <h3 className="text-neutral-500 text-[10px] font-black tracking-widest uppercase mb-2">Total Withdrawals</h3>
-            <div className="text-3xl font-black text-orange-400">-{stats.withdrawals.toLocaleString()}</div>
-          </div>
-          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden flex flex-col justify-between">
-            <h3 className="text-neutral-500 text-[10px] font-black tracking-widest uppercase mb-2">Net Cash Flow</h3>
-            <div className={`text-3xl font-black ${stats.netFlow >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
-              {stats.netFlow > 0 ? '+' : ''}{stats.netFlow.toLocaleString()}
+          {/* ⚡ WITHDRAWALS: Action Queue */}
+          <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg flex flex-col h-[500px]">
+            <div className="bg-neutral-900 border-b border-neutral-800 px-6 py-4 flex justify-between items-center shrink-0">
+              <h2 className="text-lg font-black tracking-widest text-white flex items-center gap-2">
+                <span className="text-yellow-500">📤</span> WITHDRAWALS
+              </h2>
+              <span className="bg-yellow-500/10 text-yellow-500 text-[10px] font-bold px-2 py-1 rounded border border-yellow-500/20 uppercase">
+                {pendingTxs.length} Pending
+              </span>
             </div>
-          </div>
-          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden flex flex-col justify-between">
-            <h3 className="text-neutral-500 text-[10px] font-black tracking-widest uppercase mb-2">Games Hosted</h3>
-            <div className="text-3xl font-black text-purple-400">{stats.gamesHosted.toLocaleString()}</div>
-          </div>
+            
+            <div className="overflow-y-auto flex-1 p-4 space-y-3 custom-scrollbar">
+              {pendingTxs.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-neutral-500 text-sm font-medium">All queues clear. No pending requests.</div>
+              ) : (
+                <AnimatePresence>
+                  {pendingTxs.map((tx) => (
+                    <motion.div key={tx.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -10 }} 
+                      className="bg-neutral-950 border border-neutral-800 p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-orange-400 font-black text-lg">{tx.amount.toLocaleString()} ETB</span>
+                          <span className="text-[9px] text-neutral-500 tracking-widest uppercase">{timeAgo(tx.created_at)}</span>
+                        </div>
+                        <div className="text-xs text-neutral-400">
+                          ID: <span className="font-mono text-neutral-300">{tx.user_id}</span>
+                        </div>
+                        <div className="text-xs text-neutral-400 mt-0.5">
+                          Player: <span className="font-bold text-white">{tx.display_name || 'Unknown'}</span> 
+                          {tx.phone && <span className="ml-2 bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20">{tx.phone}</span>}
+                        </div>
+                      </div>
+                      
+                      <div className="flex gap-2 w-full sm:w-auto">
+                        {processingTx === tx.id ? (
+                          <div className="w-full text-center text-xs text-neutral-500 animate-pulse py-2">Processing...</div>
+                        ) : (
+                          <>
+                            <button onClick={() => handleApprove(tx.id)} className="flex-1 sm:w-auto px-4 py-2 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 hover:bg-emerald-500 hover:text-black transition-colors font-bold text-xs uppercase tracking-widest">
+                              Approve
+                            </button>
+                            <button onClick={() => handleReject(tx.id, tx.user_id, tx.amount)} className="flex-1 sm:w-auto px-4 py-2 rounded bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition-colors font-bold text-xs uppercase tracking-widest">
+                              Reject
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              )}
+            </div>
+          </section>
+
+          {/* 📥 DEPOSITS: Settled Ledger */}
+          <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg flex flex-col h-[500px]">
+            <div className="bg-neutral-900 border-b border-neutral-800 px-6 py-4 flex justify-between items-center shrink-0">
+              <h2 className="text-lg font-black tracking-widest text-white flex items-center gap-2">
+                <span className="text-emerald-500">📥</span> DEPOSIT LEDGER
+              </h2>
+              <span className="bg-emerald-500/10 text-emerald-500 text-[10px] font-bold px-2 py-1 rounded border border-emerald-500/20 uppercase">
+                Last 100
+              </span>
+            </div>
+            
+            <div className="overflow-y-auto flex-1 p-4 space-y-3 custom-scrollbar">
+              {recentDeposits.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-neutral-500 text-sm font-medium">No recent deposit activity.</div>
+              ) : (
+                recentDeposits.map((tx) => (
+                  <div key={tx.id} className="bg-neutral-950/50 border border-neutral-800/50 p-3 rounded-lg flex items-center justify-between">
+                    <div>
+                      <div className="text-emerald-400 font-bold text-sm">+{tx.amount.toLocaleString()} ETB</div>
+                      <div className="text-[10px] text-neutral-500 truncate max-w-[150px] sm:max-w-[200px] mt-0.5">
+                        {tx.display_name || tx.user_id}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[10px] text-neutral-400 tracking-widest uppercase">{timeAgo(tx.created_at)}</div>
+                      <div className="text-[9px] text-emerald-500/50 uppercase mt-0.5">Automated</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
         </div>
 
       </div>
