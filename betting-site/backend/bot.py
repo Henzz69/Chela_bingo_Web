@@ -319,19 +319,31 @@ def remove_keyboard() -> ReplyKeyboardRemove:
     return ReplyKeyboardRemove()
 
 # ---------------------------------------------------------------------------
-# REUSABLE TRANSACTION PARSER
+# REUSABLE TRANSACTION PARSER (SECURED)
 # ---------------------------------------------------------------------------
 def _extract_transaction_id(text: str) -> str:
     text_clean = text.strip().upper()
-    cbe_match = re.search(r'(FT[A-Z0-9]{10})', text_clean)
+    
+    # 1. URL Sterilization
+    text_clean = re.sub(r'HTTPS?://\S+', '', text_clean)
+    
+    # 2. CBE Surgical Strike: Hunts strictly for FT followed by 10 alphanumeric chars
+    cbe_match = re.search(r'\b(FT[A-Z0-9]{10})\b', text_clean)
     if cbe_match:
         return cbe_match.group(1)
         
-    text_no_urls = re.sub(r'HTTPS?://\S+', '', text_clean)
-    match = re.search(r'\b(?=.*[0-9])(?=.*[A-Z])[A-Z0-9]{8,12}\b', text_no_urls)
-    if match:
-        return match.group(0)
+    # 3. Standard Wallet Extraction (Strict Boundaries)
+    # Must be 8-12 chars, must contain numbers, must contain letters.
+    standard_match = re.search(r'\b(?=.*[0-9])(?=.*[A-Z])[A-Z0-9]{8,12}\b', text_clean)
+    if standard_match:
+        return standard_match.group(0)
         
+    # 4. Aggressive Fallback (Ignores boundaries in case of weird punctuation)
+    aggressive_match = re.search(r'(?=.*[0-9])(?=.*[A-Z])[A-Z0-9]{8,12}', text_clean)
+    if aggressive_match:
+        return aggressive_match.group(0)
+        
+    # 5. Last resort
     parts = text_clean.split()
     return parts[0] if parts else text_clean
 
@@ -512,7 +524,7 @@ def handle_text(message):
         set_state(chat_id, STATE_IDLE)
         
         raw_extracted_id = _extract_transaction_id(text)
-        # Fix 1: Strip out trailing punctuation marks (like periods or spaces) from the ID
+        # Strip out trailing punctuation marks (like periods or spaces) from the ID
         clean_txn_id = re.sub(r'[^A-Z0-9]', '', raw_extracted_id.upper())
         
         dep_info = user_deposit_data.get(chat_id, {"provider": "telebirr", "amount": 0.0})
@@ -605,7 +617,7 @@ def handle_text(message):
             receiver_name = str(payload_data.get("creditedPartyName", "")).upper()
             receiver_account = str(payload_data.get("creditedPartyAccountNo", ""))
 
-            # Fix 3: Masked-Aware Identity Check
+            # Masked-Aware Identity Check
             is_valid_destination = False
             for valid_name in VALID_MERCHANT_NAMES:
                 if valid_name in receiver_name:
