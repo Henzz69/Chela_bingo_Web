@@ -322,21 +322,28 @@ def remove_keyboard() -> ReplyKeyboardRemove:
 # REUSABLE TRANSACTION PARSER (UNBYPASSABLE & STRICT)
 # ---------------------------------------------------------------------------
 def _extract_transaction_id(text: str):
-    # 1. Destroy URLs entirely so they don't confuse the parser
+    # 1. 🚀 THE CBE BYPASS: Extract from CBE URL parameters BEFORE destroying URLs
+    # Example Target: https://apps.cbe.com.et:100/?id=FT261537KNK210149786
+    cbe_url_match = re.search(r'[\?&]id=(FT[a-zA-Z0-9]+)', text, flags=re.IGNORECASE)
+    if cbe_url_match:
+        return cbe_url_match.group(1).upper()
+        
+    # 2. Destroy URLs entirely so they don't confuse the standard parser
     text_no_urls = re.sub(r'https?://\S+|www\.\S+', ' ', text, flags=re.IGNORECASE)
     
-    # 2. Scrub Punctuation: Replace all special characters with spaces
+    # 3. Scrub Punctuation: Replace all special characters with spaces
     clean_text = re.sub(r'[^a-zA-Z0-9\s]', ' ', text_no_urls)
     
-    # 3. Split the text into a clean list of uppercase words
+    # 4. Split the text into a clean list of uppercase words
     words = clean_text.upper().split()
     
-    # 4. Check for CBE specific format first (FT followed by 10 alphanumeric chars)
+    # 5. Check for standalone CBE formats (If user pasted it without a URL)
     for word in words:
-        if word.startswith('FT') and len(word) == 12 and word.isalnum():
+        if word.startswith('FT') and len(word) >= 12 and word.isalnum():
             return word
             
-    # 5. Scan for standard Mobile Money / Bank IDs (Telebirr, M-Pesa, CBE Birr)
+    # 6. Scan for standard Mobile Money / Bank IDs (Telebirr, M-Pesa, CBE Birr)
+    # Usually 8 to 12 chars, containing BOTH letters and numbers.
     for word in words:
         if 8 <= len(word) <= 12:
             has_letter = any(char.isalpha() for char in word)
@@ -575,7 +582,6 @@ def handle_text(message):
 
         url = "https://verifyapi.leulzenebe.pro/verify"
         
-        # 🚨 FIXED: Clean payloads exclusively. No legacy splitting side-effects.
         payload = {"reference": clean_txn_id}
 
         if not VERIFIER_API_KEY:
