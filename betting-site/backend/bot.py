@@ -145,6 +145,7 @@ bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 bot.delete_webhook(drop_pending_updates=True)
 
 try:
+    # 🚀 /start is at the absolute top of the commands list
     bot.set_my_commands([
         BotCommand("start", "Main Menu / ዋና ማውጫ"),
         BotCommand("play", "Launch Bingo / ጨዋታ ጀምር"),
@@ -291,6 +292,7 @@ def cancel_reply_keyboard(lang: str) -> ReplyKeyboardMarkup:
     return kb
 
 def payment_methods_markup() -> InlineKeyboardMarkup:
+    # ❌ CBE option permanently removed from standard selection array
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
         InlineKeyboardButton("Telebirr 📱", callback_data="dep_prov|telebirr"),
@@ -552,6 +554,11 @@ def handle_text(message):
         dep_info = user_deposit_data.get(chat_id, {"provider": "telebirr", "amount": 0.0})
         expected_amount = float(dep_info.get("amount", 0.0))
         
+        print("\n" + "="*50)
+        print(f"🔍 [X-RAY] INITIATING DEPOSIT VERIFICATION")
+        print(f"🔍 Extracted Ref: {clean_txn_id}")
+        print("="*50)
+        
         if not _reserve_transaction(clean_txn_id, message.from_user.id, expected_amount):
             bot.send_message(chat_id, STRINGS[lang]["api_used"], reply_markup=remove_keyboard())
             bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
@@ -620,9 +627,9 @@ def handle_text(message):
                 new_balance = current_balance + verified_amount
                 
                 if _supabase is not None:
-                    # 1. Update the user's wallet
+                    # 1. Update the user's running wallet balance
                     _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
-                    # 2. 🚀 PIPELINE TO DASHBOARD: Log the automated deposit as 'completed'
+                    # 2. Pipeline a completed record into the admin ledger
                     _supabase.table("transactions").insert({
                         "user_id": str(message.from_user.id),
                         "amount": verified_amount,
@@ -667,6 +674,7 @@ def handle_text(message):
             return
 
         if state == STATE_AWAITING_DEPOSIT:
+            # Barrier Enforcement: 50 ETB Minimum Deposit
             if amount < 50:
                 bot.send_message(chat_id, STRINGS[lang]["min_dep_err"])
                 return
@@ -682,6 +690,7 @@ def handle_text(message):
             bot.send_message(chat_id, inst_txt, reply_markup=cancel_reply_keyboard(lang), parse_mode="HTML")
 
         elif state == STATE_AWAITING_WITHDRAW:
+            # Barrier Enforcement: 100 ETB Minimum Withdrawal
             if amount < 100:
                 bot.send_message(chat_id, STRINGS[lang]["min_with_err"])
                 return
@@ -693,11 +702,11 @@ def handle_text(message):
                 bot.send_message(chat_id, STRINGS[lang]["insufficient"].format(user_balance), reply_markup=remove_keyboard())
             else:
                 if _supabase is not None:
-                    # 1. 🚀 ZERO-HARM ESCROW: Deduct funds immediately upon request
+                    # Secure Escrow Hook: Deduct the pending withdrawal funds instantly
                     new_balance = user_balance - amount
                     _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
                     
-                    # 2. 🚀 PIPELINE TO DASHBOARD: Log the withdrawal as 'pending'
+                    # Direct Dashboard Stream: Pipeline request parameters to database table natively
                     _supabase.table("transactions").insert({
                         "user_id": str(message.from_user.id),
                         "amount": amount,
@@ -705,11 +714,8 @@ def handle_text(message):
                         "status": "pending"
                     }).execute()
 
+                # Clean submission exit notice (No legacy admin Telegram ping here)
                 bot.send_message(chat_id, STRINGS[lang]["with_submitted"].format(amount), reply_markup=remove_keyboard())
-                try:
-                    bot.send_message(ADMIN_IDS[0], f"💸 *NEW WITHDRAW REQUEST*\nUser ID: `{message.from_user.id}`\nAmount: `{amount:.2f} ETB`")
-                except Exception:
-                    pass
 
             bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
         return
