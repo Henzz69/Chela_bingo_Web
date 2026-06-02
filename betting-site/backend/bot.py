@@ -44,7 +44,6 @@ VALID_MERCHANT_NAMES = [
 
 VALID_MERCHANT_ACCOUNTS = [
     "0919184337",       # Telebirr & CBE Birr (Bereket)
-    "1000539559927",    # CBE (Henok)
     "0723191843"        # M-Pesa (Bereket)
 ]
 
@@ -124,7 +123,7 @@ def _start_tunnel(port: int = 3000) -> str:
     _tunnel_proc = subprocess.Popen(["npx", "localtunnel", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
     url = None
     for line in _tunnel_proc.stdout:
-        match = re.search(r"your url is:\s*(https://\S+)", line)
+        match = re.search(r"your url is:\s*(https://S+)", line)
         if match:
             url = match.group(1).strip()
             break
@@ -147,13 +146,13 @@ bot.delete_webhook(drop_pending_updates=True)
 
 try:
     bot.set_my_commands([
+        BotCommand("start", "Main Menu / ዋና ማውጫ"),
         BotCommand("play", "Launch Bingo / ጨዋታ ጀምር"),
         BotCommand("deposit", "Deposit Funds / ብር ማስገባት"),
         BotCommand("withdraw", "Withdraw Funds / ብር ማውጣት"),
         BotCommand("balance", "Check Balance / ቀሪ ሂሳብ ማየት"),
         BotCommand("invite", "Refer Friends / ጓደኛ ጋብዝ"),
-        BotCommand("support", "Help Center / የድጋፍ ማዕከል"),
-        BotCommand("start", "Main Menu / ዋና ማውጫ")
+        BotCommand("support", "Help Center / የድጋፍ ማዕከል")
     ])
 except Exception:
     pass
@@ -199,6 +198,8 @@ STRINGS = {
         "enter_amount": "📥 *Deposit Amount*\n\nPlease enter or select the exact amount of ETB you want to deposit:",
         "enter_with_amount": "📤 *Withdraw Funds*\n\nPlease enter the amount you want to withdraw:",
         "invalid_amount": "⚠️ Please enter a valid positive number.",
+        "min_dep_err": "⚠️ *Invalid Amount:* The minimum deposit amount is 50 ETB.",
+        "min_with_err": "⚠️ *Invalid Amount:* The minimum withdrawal amount is 100 ETB.",
         "insufficient": "❌ Insufficient Balance. You only have `{:.2f} ETB`.",
         "with_submitted": "✅ Withdrawal request of `{:.0f} ETB` submitted! Our team will process it shortly.",
         "action_cancelled": "Action cancelled.",
@@ -213,7 +214,6 @@ STRINGS = {
         "support_msg": "🎧 *CHELA Bingo Support*\n\nNeed help with a deposit, withdrawal, or a game issue? Our team is here 24/7.\n\nContact us directly: @ChelaSupport",
         
         "inst_telebirr": "Telebirr Account\n\n<code>0919184337</code>\n\n<blockquote>1. Send {} ETB to the Telebirr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from Telebirr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the Telebirr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
-        "inst_cbe": "CBE Account\n\n<code>1000539559927</code>\n\n<blockquote>1. Send {} ETB to the CBE account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from the bank containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the CBE account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
         "inst_cbe_birr": "CBE Birr Account\n\n<code>0919184337</code>\n\n<blockquote>1. Send {} ETB to the CBE Birr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from CBE Birr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the CBE Birr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
         "inst_mpesa": "M-Pesa Account\n\n<code>0723191843</code>\n\n<blockquote>1. Send {} ETB to the M-Pesa account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from M-Pesa containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the M-Pesa account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
     },
@@ -233,6 +233,8 @@ STRINGS = {
         "enter_amount": "📥 *የማስቀመጫ መጠን*\n\nእባክዎ ማስገባት የሚፈልጉትን የገንዘብ መጠን በETB ያስገቡ ወይም ይምረጡ:",
         "enter_with_amount": "📤 *ገንዘብ ማውጫ*\n\nእባክዎ ማውጣት የሚፈልጉትን የገንዘብ መጠን ያስገቡ:",
         "invalid_amount": "⚠️ እባክዎን ትክክለኛ ቁጥር ያስገቡ።",
+        "min_dep_err": "⚠️ *የተሳሳተ መጠን:* አነስተኛው የገንዘብ ማስገቢያ መጠን 50 ETB ነው።",
+        "min_with_err": "⚠️ *የተሳሳተ መጠን:* አነስተኛው የገንዘብ ማውጫ መጠን 100 ETB ነው።",
         "insufficient": "❌ በቂ ቀሪ ሂሳብ የለዎትም። ያለዎት `{:.2f} ETB` ብቻ ነው።",
         "with_submitted": "✅ የ `{:.0f} ETB` ማውጫ ጥያቄዎ ቀርቧል! በቅርቡ እናስተናግዳለን።",
         "action_cancelled": "ድርጊቱ ተሰርዟል።",
@@ -247,7 +249,6 @@ STRINGS = {
         "support_msg": "🎧 *የቼላ ቢንጎ ድጋፍ ማዕከል*\n\nስለ ክፍያ፣ ገንዘብ ማውጣት ወይም ጨዋታ እርዳታ ይፈልጋሉ? ቡድናችን 24/7 ዝግጁ ነው።\n\nያነጋግሩን: @ChelaSupport",
         
         "inst_telebirr": "የቴሌብር አካውንት\n\n<code>0919184337</code>\n\n<blockquote>1. Send {} ETB to the Telebirr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from Telebirr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the Telebirr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
-        "inst_cbe": "የኢትዮጵያ ንግድ ባንክ (CBE) አካውንት\n\n<code>1000539559927</code>\n\n<blockquote>1. Send {} ETB to the CBE account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from the bank containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the CBE account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት and ማሳወቅ ይችላሉ",
         "inst_cbe_birr": "የሲቢኢ ብር (CBE Birr) አካውንት\n\n<code>0919184337</code>\n\n<blockquote>1. Send {} ETB to the CBE Birr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from CBE Birr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the CBE Birr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
         "inst_mpesa": "የኤም-ፔሳ (M-Pesa) አካውንት\n\n<code>0723191843</code>\n\n<blockquote>1. Send {} ETB to the M-Pesa account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from eye-pesa containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the M-Pesa account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
     }
@@ -293,10 +294,9 @@ def payment_methods_markup() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
         InlineKeyboardButton("Telebirr 📱", callback_data="dep_prov|telebirr"),
-        InlineKeyboardButton("CBE 🏦", callback_data="dep_prov|cbe")
+        InlineKeyboardButton("CBE Birr 💵", callback_data="dep_prov|cbe_birr")
     )
     kb.add(
-        InlineKeyboardButton("CBE Birr 💵", callback_data="dep_prov|cbe_birr"),
         InlineKeyboardButton("M-Pesa 💸", callback_data="dep_prov|mpesa")
     )
     return kb
@@ -319,31 +319,21 @@ def remove_keyboard() -> ReplyKeyboardRemove:
     return ReplyKeyboardRemove()
 
 # ---------------------------------------------------------------------------
-# REUSABLE TRANSACTION PARSER (UNBYPASSABLE & STRICT)
+# REUSABLE TRANSACTION PARSER
 # ---------------------------------------------------------------------------
 def _extract_transaction_id(text: str):
-    # 1. 🚀 THE CBE BYPASS: Extract from CBE URL parameters BEFORE destroying URLs
-    # Example Target: https://apps.cbe.com.et:100/?id=FT261537KNK210149786
     cbe_url_match = re.search(r'[\?&]id=(FT[a-zA-Z0-9]+)', text, flags=re.IGNORECASE)
     if cbe_url_match:
         return cbe_url_match.group(1).upper()
         
-    # 2. Destroy URLs entirely so they don't confuse the standard parser
     text_no_urls = re.sub(r'https?://\S+|www\.\S+', ' ', text, flags=re.IGNORECASE)
-    
-    # 3. Scrub Punctuation: Replace all special characters with spaces
     clean_text = re.sub(r'[^a-zA-Z0-9\s]', ' ', text_no_urls)
-    
-    # 4. Split the text into a clean list of uppercase words
     words = clean_text.upper().split()
     
-    # 5. Check for standalone CBE formats (If user pasted it without a URL)
     for word in words:
         if word.startswith('FT') and len(word) >= 12 and word.isalnum():
             return word
             
-    # 6. Scan for standard Mobile Money / Bank IDs (Telebirr, M-Pesa, CBE Birr)
-    # Usually 8 to 12 chars, containing BOTH letters and numbers.
     for word in words:
         if 8 <= len(word) <= 12:
             has_letter = any(char.isalpha() for char in word)
@@ -417,7 +407,6 @@ def cmd_withdraw(message):
     set_state(chat_id, STATE_AWAITING_WITHDRAW)
     bot.send_message(chat_id, STRINGS[lang]["enter_with_amount"], reply_markup=cancel_reply_keyboard(lang))
 
-# --- SECRET ADMIN DEBUG COMMAND ---
 @bot.message_handler(commands=["testsms"])
 def cmd_testsms(message):
     if not is_admin(message.from_user.id):
@@ -550,7 +539,6 @@ def handle_text(message):
         
         extracted_id = _extract_transaction_id(text)
         
-        # 🚨 THE HARD GATE: Stop instantly if no ID is found in the SMS
         if not extracted_id:
             bot.send_message(
                 chat_id, 
@@ -564,54 +552,24 @@ def handle_text(message):
         dep_info = user_deposit_data.get(chat_id, {"provider": "telebirr", "amount": 0.0})
         expected_amount = float(dep_info.get("amount", 0.0))
         
-        # --- TERMINAL LOG: INITIATION ---
-        print("\n" + "="*50)
-        print(f"🔍 [X-RAY] INITIATING DEPOSIT VERIFICATION")
-        print(f"🔍 Raw Text Segment: {text[:40]}...")
-        print(f"🔍 Extracted Ref: {clean_txn_id}")
-        print(f"🔍 Expected Amount: {expected_amount} ETB")
-        print("="*50)
-        
         if not _reserve_transaction(clean_txn_id, message.from_user.id, expected_amount):
-            print("❌ [X-RAY] Transaction rejected by database lock (Duplicate).")
             bot.send_message(chat_id, STRINGS[lang]["api_used"], reply_markup=remove_keyboard())
             bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
             return
 
         wait_msg = bot.send_message(chat_id, STRINGS[lang]["checking_api"])
-
         url = "https://verifyapi.leulzenebe.pro/verify"
-        
         payload = {"reference": clean_txn_id}
-
-        if not VERIFIER_API_KEY:
-            print("❌ [X-RAY CRITICAL] VERIFIER_API_KEY is empty in the environment!")
-
         headers = {
             "x-api-key": VERIFIER_API_KEY,
             "Content-Type": "application/json",
             "Accept": "application/json"
         }
 
-        print(f"📤 [REQ OUT] POST to: {url}")
-        print(f"📤 [REQ OUT] Payload: {payload}")
-
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=20)
             
-            # --- TERMINAL LOG: RAW BANK RESPONSE ---
-            print(f"\n📥 [RES IN] HTTP Status Code: {response.status_code}")
-            print(f"📥 [RES IN] Raw Body Data: {response.text}\n")
-
             if response.status_code != 200:
-                try:
-                    bot.send_message(
-                        ADMIN_IDS[0], 
-                        f"⚠️ *API BLACKBOX TRIPPED*\n\n*Reference:* `{clean_txn_id}`\n*HTTP Status:* `{response.status_code}`\n*Raw Error from Server:* `{response.text}`"
-                    )
-                except Exception:
-                    pass
-                    
                 _release_transaction(clean_txn_id)
                 bot.delete_message(chat_id, wait_msg.message_id)
                 bot.send_message(chat_id, STRINGS[lang]["api_fail"], reply_markup=remove_keyboard())
@@ -619,16 +577,12 @@ def handle_text(message):
                 return
 
             api_data = response.json()
-            
             if not api_data.get("success"):
-                print("❌ [X-RAY] API JSON parsed, but 'success' flag is False.")
                 raise ValueError("API explicitly returned failure flag")
 
             payload_data = api_data.get("data", {})
-            
             tx_status = str(payload_data.get("transactionStatus", "")).strip().lower()
             if tx_status != "completed":
-                print(f"❌ [X-RAY] Transaction Status Mismatch. Expected 'completed', got '{tx_status}'")
                 _release_transaction(clean_txn_id)
                 bot.delete_message(chat_id, wait_msg.message_id)
                 bot.send_message(chat_id, "❌ *Transaction Incomplete:* The bank status is not marked as Completed.", reply_markup=remove_keyboard())
@@ -639,12 +593,9 @@ def handle_text(message):
             amt_match = re.search(r"[\d\.]+", settled_amt_raw.replace(',', ''))
             verified_amount = float(amt_match.group(0)) if amt_match else 0.0
             
-            print(f"🔍 [X-RAY] Checked Amount: {verified_amount} vs Expected: {expected_amount}")
-
             receiver_name = str(payload_data.get("creditedPartyName", "")).upper()
             receiver_account = str(payload_data.get("creditedPartyAccountNo", ""))
 
-            # Masked-Aware Identity Check
             is_valid_destination = False
             for valid_name in VALID_MERCHANT_NAMES:
                 if valid_name in receiver_name:
@@ -658,7 +609,6 @@ def handle_text(message):
                         break
 
             if not is_valid_destination:
-                print(f"❌ [X-RAY] Security block! Dest Name: {receiver_name} | Dest Acct: {receiver_account}")
                 _release_transaction(clean_txn_id)
                 bot.delete_message(chat_id, wait_msg.message_id)
                 bot.send_message(chat_id, "🚨 *Destination Mismatch:*\nThe receipt is genuine, but the funds were not sent to our official merchant wallets.", reply_markup=remove_keyboard())
@@ -666,12 +616,19 @@ def handle_text(message):
                 return
 
             if verified_amount >= expected_amount and verified_amount > 0:
-                print("✅ [X-RAY] FINAL CLEARANCE! Updating database...")
                 current_balance = _get_user_balance(message.from_user.id)
                 new_balance = current_balance + verified_amount
                 
                 if _supabase is not None:
+                    # 1. Update the user's wallet
                     _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
+                    # 2. 🚀 PIPELINE TO DASHBOARD: Log the automated deposit as 'completed'
+                    _supabase.table("transactions").insert({
+                        "user_id": str(message.from_user.id),
+                        "amount": verified_amount,
+                        "tx_type": "deposit",
+                        "status": "completed"
+                    }).execute()
 
                 bot.delete_message(chat_id, wait_msg.message_id)
                 bot.send_message(chat_id, STRINGS[lang]["api_success"].format(verified_amount), reply_markup=remove_keyboard())
@@ -681,18 +638,15 @@ def handle_text(message):
                 except Exception:
                     pass
             else:
-                print("❌ [X-RAY] Amount Mismatch Block.")
                 _release_transaction(clean_txn_id)
                 bot.delete_message(chat_id, wait_msg.message_id)
                 bot.send_message(chat_id, STRINGS[lang]["api_wrong_amount"], reply_markup=remove_keyboard())
         
         except requests.exceptions.Timeout:
-            print("❌ [X-RAY] Request Timed Out.")
             _release_transaction(clean_txn_id)
             bot.delete_message(chat_id, wait_msg.message_id)
             bot.send_message(chat_id, STRINGS[lang]["api_error"], reply_markup=remove_keyboard())
         except Exception as e:
-            print(f"❌ [X-RAY] Python Exception Crash: {e}")
             _release_transaction(clean_txn_id)
             if 'wait_msg' in locals():
                 try: bot.delete_message(chat_id, wait_msg.message_id)
@@ -713,6 +667,10 @@ def handle_text(message):
             return
 
         if state == STATE_AWAITING_DEPOSIT:
+            if amount < 50:
+                bot.send_message(chat_id, STRINGS[lang]["min_dep_err"])
+                return
+                
             if chat_id not in user_deposit_data:
                 user_deposit_data[chat_id] = {"provider": "telebirr"}
             
@@ -724,12 +682,29 @@ def handle_text(message):
             bot.send_message(chat_id, inst_txt, reply_markup=cancel_reply_keyboard(lang), parse_mode="HTML")
 
         elif state == STATE_AWAITING_WITHDRAW:
+            if amount < 100:
+                bot.send_message(chat_id, STRINGS[lang]["min_with_err"])
+                return
+                
             user_balance = _get_user_balance(message.from_user.id)
             set_state(chat_id, STATE_IDLE)
             
             if amount > user_balance:
                 bot.send_message(chat_id, STRINGS[lang]["insufficient"].format(user_balance), reply_markup=remove_keyboard())
             else:
+                if _supabase is not None:
+                    # 1. 🚀 ZERO-HARM ESCROW: Deduct funds immediately upon request
+                    new_balance = user_balance - amount
+                    _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
+                    
+                    # 2. 🚀 PIPELINE TO DASHBOARD: Log the withdrawal as 'pending'
+                    _supabase.table("transactions").insert({
+                        "user_id": str(message.from_user.id),
+                        "amount": amount,
+                        "tx_type": "withdrawal",
+                        "status": "pending"
+                    }).execute()
+
                 bot.send_message(chat_id, STRINGS[lang]["with_submitted"].format(amount), reply_markup=remove_keyboard())
                 try:
                     bot.send_message(ADMIN_IDS[0], f"💸 *NEW WITHDRAW REQUEST*\nUser ID: `{message.from_user.id}`\nAmount: `{amount:.2f} ETB`")

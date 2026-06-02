@@ -42,28 +42,26 @@ export default function AdminDashboard() {
   const [macroStats, setMacroStats] = useState<AdminStats | null>(null);
   const [pendingTxs, setPendingTxs] = useState<Transaction[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [processingTx, setProcessingTx] = useState<string | null>(null);
 
-  // 📊 THE HYBRID ANALYTICS ENGINE (Only runs if unlocked!)
+  // 📊 THE HYBRID ANALYTICS ENGINE
   useEffect(() => {
-    if (!isUnlocked) return; // Do not fetch data if the vault is locked!
+    if (!isUnlocked) return; 
 
     const fetchDashboardData = async () => {
       setIsLoadingData(true);
       
-      // Calculate Time Boundary for Micro Stats
       const now = new Date();
-      let startDate = new Date(0); // Epoch (All Time)
+      let startDate = new Date(0); 
       if (timeScale === 'today') startDate = new Date(now.setHours(0,0,0,0));
       if (timeScale === 'week') startDate = new Date(now.setDate(now.getDate() - 7));
       if (timeScale === 'month') startDate = new Date(now.setDate(now.getDate() - 30));
       const isoStart = startDate.toISOString();
 
       try {
-        // 1. Fetch Global Telemetry (RPC)
         const { data: globalData, error: globalError } = await supabase.rpc('get_admin_stats');
         if (!globalError && globalData) setMacroStats(globalData as AdminStats);
 
-        // 2. Fetch Pending Queue (Always fetches ALL pending)
         const { data: pendingData } = await supabase
           .from('transactions')
           .select('*')
@@ -71,20 +69,17 @@ export default function AdminDashboard() {
           .order('created_at', { ascending: false });
         if (pendingData) setPendingTxs(pendingData);
 
-        // 3. Fetch Time-Scaled Transactions (Completed only)
         const { data: txData } = await supabase
           .from('transactions')
           .select('amount, tx_type')
           .gte('created_at', isoStart)
           .eq('status', 'completed');
 
-        // 4. Fetch Time-Scaled Games
         const { count: gamesCount } = await supabase
           .from('bingo_rooms')
           .select('*', { count: 'exact', head: true })
           .gte('created_at', isoStart);
 
-        // 5. Crunch the Micro Numbers
         let deposits = 0;
         let withdrawals = 0;
 
@@ -108,11 +103,10 @@ export default function AdminDashboard() {
     };
 
     fetchDashboardData();
-    const interval = setInterval(fetchDashboardData, 15000); // Live refresh every 15s
+    const interval = setInterval(fetchDashboardData, 15000); 
     return () => clearInterval(interval);
   }, [isUnlocked, timeScale]);
 
-  // Helper: Format relative time
   const timeAgo = (dateStr: string) => {
     const diff = Math.floor((new Date().getTime() - new Date(dateStr).getTime()) / 60000);
     if (diff < 1) return 'Just now';
@@ -121,7 +115,6 @@ export default function AdminDashboard() {
     return `${Math.floor(diff / 1440)}d ago`;
   };
 
-  // Password Unlock Handler
   const handleUnlock = (e: React.FormEvent) => {
     e.preventDefault();
     if (passInput === MASTER_PASSWORD) {
@@ -130,6 +123,25 @@ export default function AdminDashboard() {
       setPassError(true);
       setTimeout(() => setPassError(false), 2000);
     }
+  };
+
+  // 🚀 ACTION HANDLERS
+  const handleApprove = async (txId: string) => {
+    setProcessingTx(txId);
+    await supabase.from('transactions').update({ status: 'completed' }).eq('id', txId);
+    setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
+    setProcessingTx(null);
+  };
+
+  const handleReject = async (txId: string, userId: string, amount: number) => {
+    setProcessingTx(txId);
+    await supabase.rpc('admin_reject_withdrawal', {
+        p_tx_id: txId,
+        p_user_id: userId,
+        p_amount: amount
+    });
+    setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
+    setProcessingTx(null);
   };
 
   // ==========================================
@@ -191,9 +203,8 @@ export default function AdminDashboard() {
           </div>
         </header>
 
-        {/* 🌍 GLOBAL TELEMETRY (Restored Macro Stats) */}
+        {/* 🌍 GLOBAL TELEMETRY */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          
           <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500"></div>
             <h3 className="text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-1">Total House Profit</h3>
@@ -202,7 +213,6 @@ export default function AdminDashboard() {
             </div>
             <p className="text-emerald-400/60 text-[10px] mt-2 uppercase tracking-widest">All-time collected Derash</p>
           </div>
-
           <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1 bg-blue-500"></div>
             <h3 className="text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-1">ETB In Circulation</h3>
@@ -211,7 +221,6 @@ export default function AdminDashboard() {
             </div>
             <p className="text-blue-400/60 text-[10px] mt-2 uppercase tracking-widest">Active balances across all users</p>
           </div>
-
           <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1 bg-orange-500"></div>
             <h3 className="text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-1">Active Servers</h3>
@@ -220,7 +229,6 @@ export default function AdminDashboard() {
             </div>
             <p className="text-orange-400/60 text-[10px] mt-2 uppercase tracking-widest">Games playing or waiting</p>
           </div>
-
         </div>
 
         {/* ⚡ THE ACTION CENTER: Pending Queue */}
@@ -230,13 +238,13 @@ export default function AdminDashboard() {
               <span className="text-yellow-500">⚡</span> PENDING QUEUE
             </h2>
             <span className="bg-yellow-500/10 text-yellow-500 text-[10px] font-bold px-2 py-1 rounded border border-yellow-500/20 uppercase">
-              {pendingTxs.length} Awaiting Bot
+              {pendingTxs.length} Requires Action
             </span>
           </div>
           
           <div className="overflow-x-auto">
             {pendingTxs.length === 0 ? (
-              <div className="p-8 text-center text-neutral-500 text-sm font-medium">All queues clear. Bot is fully synced.</div>
+              <div className="p-8 text-center text-neutral-500 text-sm font-medium">All queues clear. No pending requests.</div>
             ) : (
               <table className="w-full text-left text-sm">
                 <thead className="text-[10px] uppercase text-neutral-500 bg-neutral-950/50">
@@ -245,6 +253,7 @@ export default function AdminDashboard() {
                     <th className="px-6 py-3 font-semibold">User ID</th>
                     <th className="px-6 py-3 font-semibold">Type</th>
                     <th className="px-6 py-3 font-semibold text-right">Amount</th>
+                    <th className="px-6 py-3 font-semibold text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800/50">
@@ -260,6 +269,20 @@ export default function AdminDashboard() {
                         </td>
                         <td className={`px-6 py-4 text-right font-black ${tx.tx_type === 'deposit' ? 'text-emerald-400' : 'text-orange-400'}`}>
                           {tx.amount.toLocaleString()} ETB
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          {processingTx === tx.id ? (
+                            <span className="text-neutral-500 text-xs animate-pulse">Processing...</span>
+                          ) : (
+                            <div className="flex justify-center gap-2">
+                              <button onClick={() => handleApprove(tx.id)} className="w-8 h-8 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 hover:bg-emerald-500 hover:text-black transition-colors" title="Approve & Complete">
+                                ✅
+                              </button>
+                              <button onClick={() => handleReject(tx.id, tx.user_id, tx.amount)} className="w-8 h-8 rounded bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition-colors" title="Reject & Refund">
+                                ❌
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </motion.tr>
                     ))}
