@@ -325,26 +325,26 @@ def _extract_transaction_id(text: str) -> str:
     text_clean = text.strip().upper()
     
     # 1. URL Sterilization
-    text_clean = re.sub(r'HTTPS?://\S+', '', text_clean)
+    text_no_urls = re.sub(r'HTTPS?://\S+', '', text_clean)
     
     # 2. CBE Surgical Strike: Hunts strictly for FT followed by 10 alphanumeric chars
-    cbe_match = re.search(r'\b(FT[A-Z0-9]{10})\b', text_clean)
+    cbe_match = re.search(r'\b(FT[A-Z0-9]{10})\b', text_no_urls)
     if cbe_match:
         return cbe_match.group(1)
         
-    # 3. Standard Wallet Extraction (Strict Boundaries)
-    # Must be 8-12 chars, must contain numbers, must contain letters.
-    standard_match = re.search(r'\b(?=.*[0-9])(?=.*[A-Z])[A-Z0-9]{8,12}\b', text_clean)
-    if standard_match:
-        return standard_match.group(0)
+    # 3. Find ALL words exactly between 8 and 12 characters long
+    candidates = re.findall(r'\b[A-Z0-9]{8,12}\b', text_no_urls)
+    
+    # 4. Filter them: A valid ID MUST contain BOTH letters AND numbers
+    for word in candidates:
+        has_letter = any(c.isalpha() for c in word)
+        has_number = any(c.isdigit() for c in word)
         
-    # 4. Aggressive Fallback (Ignores boundaries in case of weird punctuation)
-    aggressive_match = re.search(r'(?=.*[0-9])(?=.*[A-Z])[A-Z0-9]{8,12}', text_clean)
-    if aggressive_match:
-        return aggressive_match.group(0)
-        
-    # 5. Last resort
-    parts = text_clean.split()
+        if has_letter and has_number:
+            return word 
+            
+    # 5. Last resort fallback
+    parts = text_no_urls.split()
     return parts[0] if parts else text_clean
 
 # ---------------------------------------------------------------------------
@@ -524,7 +524,6 @@ def handle_text(message):
         set_state(chat_id, STATE_IDLE)
         
         raw_extracted_id = _extract_transaction_id(text)
-        # Strip out trailing punctuation marks (like periods or spaces) from the ID
         clean_txn_id = re.sub(r'[^A-Z0-9]', '', raw_extracted_id.upper())
         
         dep_info = user_deposit_data.get(chat_id, {"provider": "telebirr", "amount": 0.0})
@@ -575,7 +574,6 @@ def handle_text(message):
             print(f"\n📥 [RES IN] HTTP Status Code: {response.status_code}")
             print(f"📥 [RES IN] Raw Body Data: {response.text}\n")
 
-            # 🚨 THE TRIGGER: If the bank rejects us, send the exact reason to the Admin
             if response.status_code != 200:
                 try:
                     bot.send_message(
