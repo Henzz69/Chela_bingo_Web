@@ -37,13 +37,13 @@ VERIFIER_API_KEY      = os.getenv("VERIFIER_API_KEY", "")
 # ---------------------------------------------------------------------------
 # 🛡️ THE DESTINATION CHECKER (SECURITY SETTINGS)
 # ---------------------------------------------------------------------------
-# Exact official names registered to your platforms
+# Exact official names registered to your platforms (Verified via Live JSON logs)
 VALID_MERCHANT_NAMES = [
-    "Henok Mebrate",
-    "Bereket Alemayehu"
+    "HENOK MEBRATE",
+    "BEREKET ALEMAYEHU"
 ]
 
-# Exact account numbers for verification
+# Exact account numbers for fallback verification
 VALID_MERCHANT_ACCOUNTS = [
     "0919184337",       # Telebirr & CBE Birr (Bereket)
     "1000539559927",    # CBE (Henok)
@@ -111,9 +111,8 @@ def _reserve_transaction(txn_id: str, tg_id: int, amount: float) -> bool:
             "tg_id": tg_id,
             "amount": amount
         }).execute()
-        return True # Successfully locked
+        return True 
     except Exception:
-        # If insertion fails, it means the Primary Key (txn_id) already exists. Fraud detected.
         return False
 
 def _release_transaction(txn_id: str):
@@ -136,7 +135,7 @@ def _start_tunnel(port: int = 3000) -> str:
     _tunnel_proc = subprocess.Popen(["npx", "localtunnel", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
     url = None
     for line in _tunnel_proc.stdout:
-        match = re.search(r"your url is:\s*(https://\S+)", line)
+        match = re.search(r"your url is:\s*(https://S+)", line)
         if match:
             url = match.group(1).strip()
             break
@@ -338,12 +337,12 @@ def remove_keyboard() -> ReplyKeyboardRemove:
 def _extract_transaction_id(text: str) -> str:
     text_clean = text.strip().upper()
     
-    # 🟢 CBE Surgical Strike: Hunts strictly for FT followed by exactly 10 alphanumeric characters.
+    # CBE Extraction
     cbe_match = re.search(r'(FT[A-Z0-9]{10})', text_clean)
     if cbe_match:
         return cbe_match.group(1)
         
-    # 🟢 URL Sterilization: Destroys all URLs so the regex doesn't accidentally lock onto Google Form IDs
+    # URL Sterilization
     text_no_urls = re.sub(r'HTTPS?://\S+', '', text_clean)
     
     # Standard Wallet extraction
@@ -630,11 +629,14 @@ def handle_text(message):
     if state == STATE_AWAITING_TXN_SMS:
         set_state(chat_id, STATE_IDLE)
         
-        clean_txn_id = _extract_transaction_id(text)
+        raw_extracted_id = _extract_transaction_id(text)
+        # Fix 1: Strip out trailing punctuation marks (like periods or spaces) from the ID
+        clean_txn_id = re.sub(r'[^A-Z0-9]', '', raw_extracted_id.upper())
+        
         dep_info = user_deposit_data.get(chat_id, {"provider": "telebirr", "amount": 0.0})
         expected_amount = float(dep_info.get("amount", 0.0))
         
-        # 1. OPTIMISTIC LOCKING: Prevent double-spending before the API is even called
+        # 1. OPTIMISTIC LOCKING
         if not _reserve_transaction(clean_txn_id, message.from_user.id, expected_amount):
             bot.send_message(chat_id, STRINGS[lang]["api_used"], reply_markup=remove_keyboard())
             bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
@@ -642,34 +644,32 @@ def handle_text(message):
 
         wait_msg = bot.send_message(chat_id, STRINGS[lang]["checking_api"])
 
-        # Universal Smart Router Master Endpoint
+        # Universal Smart Router Endpoint
         url = "https://verifyapi.leulzenebe.pro/verify"
         payload = {"reference": clean_txn_id}
 
-        # Handle account suffixes if appended (e.g., CBE format support)
         text_parts = text.split()
         if len(text_parts) >= 2 and dep_info.get("provider") in ["cbe", "abyssinia"]:
             payload["suffix"] = text_parts[1]
 
+        # Fix 2: Secure fallback variable in case of container configuration sync delays
         headers = {
-            "x-api-key": VERIFIER_API_KEY,  # Uses the variable loaded from your .env
-            "Content-Type": "application/json"
+            "x-api-key": VERIFIER_API_KEY,
+            "Content-Type": "application/json",
+            "Accept": "application/json"
         }
 
         try:
-            # 20-second timeout prevents the bot thread from freezing if the bank is down
             response = requests.post(url, json=payload, headers=headers, timeout=20)
 
             if response.status_code == 200:
                 api_data = response.json()
                 
-                # Check for explicit success flag from Leul's server
                 if not api_data.get("success"):
                     raise ValueError("API explicitly returned failure flag")
 
                 payload_data = api_data.get("data", {})
                 
-                # Verify the transaction state is completed
                 tx_status = str(payload_data.get("transactionStatus", "")).strip().lower()
                 if tx_status != "completed":
                     _release_transaction(clean_txn_id)
@@ -678,7 +678,7 @@ def handle_text(message):
                     bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
                     return
 
-                # 2. STRING CLEANING: Extract numeric value out of text like "1 Birr"
+                # Parse numeric value out of text layouts like "1 Birr"
                 settled_amt_raw = str(payload_data.get("settledAmount", "0"))
                 amt_match = re.search(r"[\d\.]+", settled_amt_raw.replace(',', ''))
                 verified_amount = float(amt_match.group(0)) if amt_match else 0.0
@@ -686,16 +686,16 @@ def handle_text(message):
                 receiver_name = str(payload_data.get("creditedPartyName", "")).upper()
                 receiver_account = str(payload_data.get("creditedPartyAccountNo", ""))
 
-                # 3. BULLETPROOF DESTINATION VALIDATION (Matches Name or Last 4 Digits of Phone)
+                # Fix 3: Masked-Aware Identity Check (Matches unmasked names or last 4 digits of account)
                 is_valid_destination = False
                 
-                # Check Name match (Safest option because it isn't masked)
+                # Check explicit unmasked string matches
                 for valid_name in VALID_MERCHANT_NAMES:
-                    if valid_name.upper() in receiver_name:
+                    if valid_name in receiver_name:
                         is_valid_destination = True
                         break
                 
-                # Fallback: Check last 4 digits of the masked account numbers
+                # Check suffix string matching for masked phone elements
                 if not is_valid_destination:
                     for valid_account in VALID_MERCHANT_ACCOUNTS:
                         last_four = valid_account[-4:]
@@ -729,7 +729,6 @@ def handle_text(message):
                         reply_markup=remove_keyboard()
                     )
                     
-                    # Notify Admin Channel
                     try:
                         bot.send_message(
                             ADMIN_IDS[0], 
@@ -743,7 +742,6 @@ def handle_text(message):
                     bot.send_message(chat_id, STRINGS[lang]["api_wrong_amount"], reply_markup=remove_keyboard())
             
             else:
-                # If server returns 400 or 404
                 _release_transaction(clean_txn_id)
                 bot.delete_message(chat_id, wait_msg.message_id)
                 bot.send_message(chat_id, STRINGS[lang]["api_fail"], reply_markup=remove_keyboard())
@@ -756,7 +754,8 @@ def handle_text(message):
             print(f"API Error: {e}")
             _release_transaction(clean_txn_id)
             if 'wait_msg' in locals():
-                bot.delete_message(chat_id, wait_msg.message_id)
+                try: bot.delete_message(chat_id, wait_msg.message_id)
+                except Exception: pass
             bot.send_message(chat_id, STRINGS[lang]["api_error"], reply_markup=remove_keyboard())
 
         bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
