@@ -51,7 +51,7 @@ VALID_MERCHANT_ACCOUNTS = [
 # ---------------------------------------------------------------------------
 # ADMIN AUTHORIZATION
 # ---------------------------------------------------------------------------
-ADMIN_IDS = [5681654051]  # IMPORTANT: Change this to your exact Telegram ID
+ADMIN_IDS = [5681654051]
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
@@ -246,10 +246,10 @@ STRINGS = {
         "invite_msg": "🎁 *ጓደኞችዎን ይጋብዙ!*\n\nይህን ቦት ለጓደኞችዎ በማጋራት ሲጫወቱ ሽልማቶችን ያግኙ።\n\nየመጋበዣ ሊንክዎ:\n`https://t.me/ChelaBingoBot?start={}`",
         "support_msg": "🎧 *የቼላ ቢንጎ ድጋፍ ማዕከል*\n\nስለ ክፍያ፣ ገንዘብ ማውጣት ወይም ጨዋታ እርዳታ ይፈልጋሉ? ቡድናችን 24/7 ዝግጁ ነው።\n\nያነጋግሩን: @ChelaSupport",
         
-        "inst_telebirr": "የቴሌብር አካውንት\n\n<code>0919184337</code>\n\n<blockquote>1. ከላይ ባለው የቴሌብር አካውንት {}ብር ያስገቡ\n\n2. የምትልኩት የገንዘብ መጠን እና እዚ ላይ እንዲሞላልዎ የምትፈልጉት የብር መጠን ተመሳሳይ መሆኑን እርግጠኛ ይሁኑ\n\n3. ብሩን ስትልኩ የከፈላችሁበትን መረጃ የያዘ አጭር የፅሁፍ መልክት(sms) ከቴሌብር ይደርስዎታል\n\n4. የደረሳችሁን አጭር የፅሁፍ መልክት(sms) ሙሉዉን ኮፒ(copy) በማረግ ከታች ባለው የቴሌግራም የፅሁፍ ማሰፈሪያው ላይ ፔስት(paste) በማረግ ይላኩት\n\nማሳሰቢያ፡ ዲፓዚት ባረጉ ቁጥር ቦቱ የሚያገናኛቹ ኤጀንቶች ስለሚለየው ከላይ ወደሚሰጠው የቴሌብር አካውንት ብቻ ብር መላካችሁን እርግጠኛ ይሁኑ:: ዲፓዚት ስታረጉ ቦቱ ከሚያገናኛቹ ኤጀንት ውጪ ወደ ሌላ ኤጀንት ብር ከላካቹ ቦቱ 2% ቆርጦ ይልክላችኋል::</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
-        "inst_cbe": "የኢትዮጵያ ንግድ ባንክ (CBE) አካውንት\n\n<code>1000539559927</code>\n\n<blockquote>1. ከላይ ባለው የኢትዮጵያ ንግድ ባንክ አካውንት {}ብር ያስገቡ\n\n2. የምትልኩት የገንዘብ መጠን እና እዚ ላይ እንዲሞላልዎ የምትፈልጉት የብር መጠን ተመሳሳይ መሆኑን እርግጠኛ ይሁኑ\n\n3. ብሩን ስትልኩ የከፈላችሁበትን መረጃ የያዘ አጭር የፅሁፍ መልክት(sms) ከባንኩ ይደርስዎታል\n\n4. የደረሳችሁን አጭር የፅሁፍ መልክት(sms) ሙሉዉን ኮፒ(copy) በማረግ ከታች ባለው የቴሌግራም የፅሁፍ ማሰፈሪያው ላይ ፔስት(paste) በማረግ ይላኩት\n\nማሳሰቢያ፡ ዲፓዚት ባረጉ ቁጥር ቦቱ የሚያገናኛቹ ኤጀንቶች ስለሚለየው ከላይ ወደሚሰጠው የባንክ አካውንት ብቻ ብር መላካችሁን እርግጠኛ ይሁኑ:: ዲፓዚት ስታረጉ ቦቱ ከሚያገናኛቹ ኤጀንት ውጪ ወደ ሌላ ኤጀንት ብር ከላካቹ ቦቱ 2% ቆርጦ ይልክላችኋል::</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
-        "inst_cbe_birr": "የሲቢኢ ብር (CBE Birr) አካውንት\n\n<code>0919184337</code>\n\n<blockquote>1. ከላይ ባለው የሲቢኢ ብር አካውንት {}ብር ያስገቡ\n\n2. የምትልኩት የገንዘብ መጠን እና እዚ ላይ እንዲሞላልዎ የምትፈልጉት የብር መጠን ተመሳሳይ መሆኑን እርግጠኛ ይሁኑ\n\n3. ብሩን ስትልኩ የከፈላችሁበትን መረጃ የያዘ አጭር የፅሁፍ መልክት(sms) ከሲቢኢ ብር ይደርስዎታል\n\n4. የደረሳችሁን አጭር የፅሁፍ መልክት(sms) ሙሉዉን ኮፒ(copy) በማረግ ከታች ባለው የቴሌግራም የፅሁፍ ማሰፈሪያው ላይ ፔስት(paste) በማረግ ይላኩት\n\nማሳሰቢያ፡ ዲፓዚት ባረጉ ቁጥር ቦቱ የሚያገናኛቹ ኤጀንቶች ስለሚለየው ከላይ ወደሚሰጠው የሲቢኢ ብር አካውንት ብቻ ብር መላካችሁን እርግጠኛ ይሁኑ:: ዲፓዚት ስታረጉ ቦቱ ከሚያገናኛቹ ኤጀንት ውጪ ወደ ሌላ ኤጀንት ብር ከላካቹ ቦቱ 2% ቆርጦ ይልክላችኋል::</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
-        "inst_mpesa": "የኤም-ፔሳ (M-Pesa) አካውንት\n\n<code>0723191843</code>\n\n<blockquote>1. ከላይ ባለው የኤም-ፔሳ አካውንት {}ብር ያስገቡ\n\n2. የምትልኩት የገንዘብ መጠን እና እዚ ላይ እንዲሞላልዎ የምትፈልጉት የብር መጠን ተመሳሳይ መሆኑን እርግጠኛ ይሁኑ\n\n3. ብሩን ስትልኩ የከፈላችሁበትን መረጃ የያዘ አጭር የፅሁፍ መልክት(sms) ከኤም-ፔሳ ይደርስዎታል\n\n4. የደረሳችሁን አጭር የፅሁፍ መልክት(sms) ሙሉዉን ኮፒ(copy) በማረግ ከታች ባለው የቴሌግራም የፅሁፍ ማሰፈሪያው ላይ ፔስት(paste) በማረግ ይላኩት\n\nማሳሰቢያ፡ ዲፓዚት ባረጉ ቁጥር ቦቱ የሚያገናኛቹ ኤጀንቶች ስለሚለየው ከላይ ወደሚሰጠው የኤም-ፔሳ አካውንት ብቻ ብር መላካችሁን እርግጠኛ ይሁኑ:: ዲፓዚት ስታረጉ ቦቱ ከሚያገናኛቹ ኤጀንት ውጪ ወደ ሌላ ኤጀንት ብር ከላካቹ ቦቱ 2% ቆርጦ ይልክላችኋል::</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
+        "inst_telebirr": "የቴሌብር አካውንት\n\n<code>0919184337</code>\n\n<blockquote>1. Send {} ETB to the Telebirr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from Telebirr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the Telebirr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
+        "inst_cbe": "የኢትዮጵያ ንግድ ባንክ (CBE) አካውንት\n\n<code>1000539559927</code>\n\n<blockquote>1. Send {} ETB to the CBE account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from the bank containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the CBE account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት and ማሳወቅ ይችላሉ",
+        "inst_cbe_birr": "የሲቢኢ ብር (CBE Birr) አካውንት\n\n<code>0919184337</code>\n\n<blockquote>1. Send {} ETB to the CBE Birr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from CBE Birr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the CBE Birr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
+        "inst_mpesa": "የኤም-ፔሳ (M-Pesa) አካውንት\n\n<code>0723191843</code>\n\n<blockquote>1. Send {} ETB to the M-Pesa account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from eye-pesa containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the M-Pesa account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
     }
 }
 
@@ -326,7 +326,6 @@ def _extract_transaction_id(text: str):
     text_no_urls = re.sub(r'https?://\S+|www\.\S+', ' ', text, flags=re.IGNORECASE)
     
     # 2. Scrub Punctuation: Replace all special characters with spaces
-    # This safely separates joined words like "DF25JAMIYR." into "DF25JAMIYR "
     clean_text = re.sub(r'[^a-zA-Z0-9\s]', ' ', text_no_urls)
     
     # 3. Split the text into a clean list of uppercase words
@@ -339,17 +338,13 @@ def _extract_transaction_id(text: str):
             
     # 5. Scan for standard Mobile Money / Bank IDs (Telebirr, M-Pesa, CBE Birr)
     for word in words:
-        # Check if the length matches typical Ethiopian bank IDs
         if 8 <= len(word) <= 12:
             has_letter = any(char.isalpha() for char in word)
             has_number = any(char.isdigit() for char in word)
             
-            # The word MUST contain both letters AND numbers to be an ID
-            # This completely ignores phone numbers and regular dictionary words
             if has_letter and has_number:
                 return word
                 
-    # 6. HARD GATE: If no valid ID is found, return None to stop the bot from guessing
     return None
 
 # ---------------------------------------------------------------------------
@@ -559,7 +554,6 @@ def handle_text(message):
             return
             
         clean_txn_id = extracted_id
-        
         dep_info = user_deposit_data.get(chat_id, {"provider": "telebirr", "amount": 0.0})
         expected_amount = float(dep_info.get("amount", 0.0))
         
@@ -580,11 +574,9 @@ def handle_text(message):
         wait_msg = bot.send_message(chat_id, STRINGS[lang]["checking_api"])
 
         url = "https://verifyapi.leulzenebe.pro/verify"
+        
+        # 🚨 FIXED: Clean payloads exclusively. No legacy splitting side-effects.
         payload = {"reference": clean_txn_id}
-
-        text_parts = text.split()
-        if len(text_parts) >= 2 and dep_info.get("provider") in ["cbe", "abyssinia"]:
-            payload["suffix"] = text_parts[1]
 
         if not VERIFIER_API_KEY:
             print("❌ [X-RAY CRITICAL] VERIFIER_API_KEY is empty in the environment!")
@@ -597,9 +589,6 @@ def handle_text(message):
 
         print(f"📤 [REQ OUT] POST to: {url}")
         print(f"📤 [REQ OUT] Payload: {payload}")
-        
-        safe_key = str(VERIFIER_API_KEY)[:8] if VERIFIER_API_KEY else "NONE"
-        print(f"📤 [REQ OUT] Key Prefix: {safe_key}***")
 
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=20)
@@ -723,7 +712,6 @@ def handle_text(message):
             
             user_deposit_data[chat_id]["amount"] = amount
             provider = user_deposit_data[chat_id]["provider"]
-            
             set_state(chat_id, STATE_AWAITING_TXN_SMS)
             
             inst_txt = STRINGS[lang][f"inst_{provider}"].format(amount)
