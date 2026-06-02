@@ -104,7 +104,6 @@ def _is_user_registered(tg_id: int) -> bool:
 def _reserve_transaction(txn_id: str, tg_id: int, amount: float) -> bool:
     """Attempts to lock the transaction in the database BEFORE API verification to prevent race conditions."""
     if _supabase is None:
-        # SECURITY: Fail-Closed. If DB is down, reject everything to protect funds.
         return False 
     try:
         _supabase.table("used_transactions").insert({
@@ -137,7 +136,7 @@ def _start_tunnel(port: int = 3000) -> str:
     _tunnel_proc = subprocess.Popen(["npx", "localtunnel", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
     url = None
     for line in _tunnel_proc.stdout:
-        match = re.search(r"your url is:\s*(https://S+)", line)
+        match = re.search(r"your url is:\s*(https://\S+)", line)
         if match:
             url = match.group(1).strip()
             break
@@ -354,32 +353,6 @@ def _extract_transaction_id(text: str) -> str:
         
     parts = text_clean.split()
     return parts[0] if parts else text_clean
-
-# ---------------------------------------------------------------------------
-# RECURSIVE DATA HUNTER
-# ---------------------------------------------------------------------------
-def _find_amount_in_json(data) -> float:
-    found_amounts = []
-    keys_to_look = ["amount", "transactionamount", "total", "value", "paidamount"]
-
-    def search_dict(d):
-        if isinstance(d, dict):
-            for k, v in d.items():
-                if str(k).lower() in keys_to_look:
-                    try:
-                        clean_val = re.search(r"[\d\.]+", str(v).replace(',', ''))
-                        if clean_val:
-                            found_amounts.append(float(clean_val.group(0)))
-                    except Exception:
-                        pass
-                elif isinstance(v, (dict, list)):
-                    search_dict(v)
-        elif isinstance(d, list):
-            for item in d:
-                search_dict(item)
-
-    search_dict(data)
-    return max(found_amounts) if found_amounts else 0.0
 
 # ---------------------------------------------------------------------------
 # COMMAND HANDLERS
@@ -661,91 +634,88 @@ def handle_text(message):
         dep_info = user_deposit_data.get(chat_id, {"provider": "telebirr", "amount": 0.0})
         expected_amount = float(dep_info.get("amount", 0.0))
         
-        # 1. OPTIMISTIC LOCKING
+        # 1. OPTIMISTIC LOCKING: Prevent double-spending before the API is even called
         if not _reserve_transaction(clean_txn_id, message.from_user.id, expected_amount):
-            bot.send_message(
-                chat_id, 
-                STRINGS[lang]["api_used"], 
-                reply_markup=remove_keyboard()
-            )
-            bot.send_message(
-                chat_id, 
-                "Main Menu:", 
-                reply_markup=main_menu_markup(lang)
-            )
+            bot.send_message(chat_id, STRINGS[lang]["api_used"], reply_markup=remove_keyboard())
+            bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
             return
-
-        provider_key = dep_info.get("provider", "telebirr")
-        
-        # 🟢 THE FIX: OWNER'S NATIVE ROUTING ARCHITECTURE
-        # Bypassing the universal router to use the exact dedicated endpoints and payloads 
-        # as structured in the vixen878/verifier-api repository.
-        if provider_key == "mpesa":
-            url = "https://verifyapi.leulzenebe.pro/verify/mpesa"
-            payload = {"receiptNumber": clean_txn_id}
-        elif provider_key == "cbe":
-            url = "https://verifyapi.leulzenebe.pro/verify/cbe"
-            payload = {"reference": clean_txn_id}
-            # Optional suffix extraction for CBE if manually appended
-            text_parts = text.split()
-            if len(text_parts) == 2:
-                payload["accountSuffix"] = text_parts[1]
-        elif provider_key == "cbe_birr":
-            url = "https://verifyapi.leulzenebe.pro/verify/cbebirr"
-            payload = {"reference": clean_txn_id}
-        else: # telebirr
-            url = "https://verifyapi.leulzenebe.pro/verify/telebirr"
-            payload = {"reference": clean_txn_id}
 
         wait_msg = bot.send_message(chat_id, STRINGS[lang]["checking_api"])
 
+        # Universal Smart Router Master Endpoint
+        url = "https://verifyapi.leulzenebe.pro/verify"
+        payload = {"reference": clean_txn_id}
+
+        # Handle account suffixes if appended (e.g., CBE format support)
+        text_parts = text.split()
+        if len(text_parts) >= 2 and dep_info.get("provider") in ["cbe", "abyssinia"]:
+            payload["suffix"] = text_parts[1]
+
         headers = {
-            "x-api-key": VERIFIER_API_KEY,
+            "x-api-key": VERIFIER_API_KEY,  # Uses the variable loaded from your .env
             "Content-Type": "application/json"
         }
 
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=25)
+            # 20-second timeout prevents the bot thread from freezing if the bank is down
+            response = requests.post(url, json=payload, headers=headers, timeout=20)
 
-            # 🟢 NATIVE SUCCESS CHECK: Relies purely on the server's HTTP 200 validation
             if response.status_code == 200:
                 api_data = response.json()
                 
-                # Natively isolates the verifier owner's nested data block
-                payload_data = api_data.get("data", api_data)
+                # Check for explicit success flag from Leul's server
+                if not api_data.get("success"):
+                    raise ValueError("API explicitly returned failure flag")
+
+                payload_data = api_data.get("data", {})
                 
-                verified_amount = _find_amount_in_json(payload_data)
-                receiver_name = str(payload_data.get("receiverName", payload_data.get("payerName", ""))).upper()
-                api_response_string = str(payload_data).replace(" ", "").upper()
-                
-                # 2. DESTINATION ACCOUNT VALIDATION (Name OR Account Number)
+                # Verify the transaction state is completed
+                tx_status = str(payload_data.get("transactionStatus", "")).strip().lower()
+                if tx_status != "completed":
+                    _release_transaction(clean_txn_id)
+                    bot.delete_message(chat_id, wait_msg.message_id)
+                    bot.send_message(chat_id, "❌ *Transaction Incomplete:* The bank status is not marked as Completed.", reply_markup=remove_keyboard())
+                    bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
+                    return
+
+                # 2. STRING CLEANING: Extract numeric value out of text like "1 Birr"
+                settled_amt_raw = str(payload_data.get("settledAmount", "0"))
+                amt_match = re.search(r"[\d\.]+", settled_amt_raw.replace(',', ''))
+                verified_amount = float(amt_match.group(0)) if amt_match else 0.0
+
+                receiver_name = str(payload_data.get("creditedPartyName", "")).upper()
+                receiver_account = str(payload_data.get("creditedPartyAccountNo", ""))
+
+                # 3. BULLETPROOF DESTINATION VALIDATION (Matches Name or Last 4 Digits of Phone)
                 is_valid_destination = False
                 
-                for valid_account in VALID_MERCHANT_ACCOUNTS:
-                    if valid_account in api_response_string:
+                # Check Name match (Safest option because it isn't masked)
+                for valid_name in VALID_MERCHANT_NAMES:
+                    if valid_name.upper() in receiver_name:
                         is_valid_destination = True
                         break
                 
+                # Fallback: Check last 4 digits of the masked account numbers
                 if not is_valid_destination:
-                    for valid_name in VALID_MERCHANT_NAMES:
-                        name_parts = valid_name.upper().split()
-                        if all(part in api_response_string for part in name_parts) or valid_name.upper() in receiver_name:
+                    for valid_account in VALID_MERCHANT_ACCOUNTS:
+                        last_four = valid_account[-4:]
+                        if last_four in receiver_account:
                             is_valid_destination = True
                             break
-                
+
                 if not is_valid_destination:
                     _release_transaction(clean_txn_id)
                     bot.delete_message(chat_id, wait_msg.message_id)
                     bot.send_message(
                         chat_id, 
-                        f"🚨 *Destination Mismatch:*\nThe receipt is valid, but the funds were sent to an unauthorized account or person. This deposit cannot be accepted.", 
+                        "🚨 *Destination Mismatch:*\nThe receipt is genuine, but the funds were not sent to our official merchant wallets.", 
                         reply_markup=remove_keyboard()
                     )
                     bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
                     return
 
-                # 3. AMOUNT VALIDATION
-                if verified_amount >= expected_amount:
+                # 4. EXACT AMOUNT VALIDATION
+                if verified_amount >= expected_amount and verified_amount > 0:
                     current_balance = _get_user_balance(message.from_user.id)
                     new_balance = current_balance + verified_amount
                     
@@ -759,45 +729,37 @@ def handle_text(message):
                         reply_markup=remove_keyboard()
                     )
                     
+                    # Notify Admin Channel
                     try:
                         bot.send_message(
                             ADMIN_IDS[0], 
-                            f"🟢 *AUTOMATED DEPOSIT SUCCESS*\nUser: `{message.from_user.id}`\nProvider: {dep_info.get('provider').upper()}\nRef: `{clean_txn_id}`\nAmount: `{verified_amount} ETB`"
+                            f"🟢 *AUTOMATED DEPOSIT SUCCESS*\nUser ID: `{message.from_user.id}`\nRef: `{clean_txn_id}`\nCredited: `{verified_amount} ETB`"
                         )
                     except Exception:
                         pass
                 else:
                     _release_transaction(clean_txn_id)
                     bot.delete_message(chat_id, wait_msg.message_id)
-                    bot.send_message(
-                        chat_id, 
-                        STRINGS[lang]["api_wrong_amount"], 
-                        reply_markup=remove_keyboard()
-                    )
+                    bot.send_message(chat_id, STRINGS[lang]["api_wrong_amount"], reply_markup=remove_keyboard())
+            
             else:
+                # If server returns 400 or 404
                 _release_transaction(clean_txn_id)
                 bot.delete_message(chat_id, wait_msg.message_id)
-                bot.send_message(
-                    chat_id, 
-                    STRINGS[lang]["api_fail"], 
-                    reply_markup=remove_keyboard()
-                )
+                bot.send_message(chat_id, STRINGS[lang]["api_fail"], reply_markup=remove_keyboard())
 
+        except requests.exceptions.Timeout:
+            _release_transaction(clean_txn_id)
+            bot.delete_message(chat_id, wait_msg.message_id)
+            bot.send_message(chat_id, STRINGS[lang]["api_error"], reply_markup=remove_keyboard())
         except Exception as e:
             print(f"API Error: {e}")
             _release_transaction(clean_txn_id)
-            bot.delete_message(chat_id, wait_msg.message_id)
-            bot.send_message(
-                chat_id, 
-                STRINGS[lang]["api_error"], 
-                reply_markup=remove_keyboard()
-            )
+            if 'wait_msg' in locals():
+                bot.delete_message(chat_id, wait_msg.message_id)
+            bot.send_message(chat_id, STRINGS[lang]["api_error"], reply_markup=remove_keyboard())
 
-        bot.send_message(
-            chat_id, 
-            "Main Menu:", 
-            reply_markup=main_menu_markup(lang)
-        )
+        bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
         return
 
     if state in (STATE_AWAITING_DEPOSIT, STATE_AWAITING_WITHDRAW):
