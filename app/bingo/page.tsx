@@ -7,6 +7,7 @@ import { useTelegram } from '@/lib/useTelegram';
 import { supabase } from '@/lib/supabaseClient';
 import BingoGameBoard from './GameBoard';
 import BingoCardSelection from './CardSelection';
+import ThemeToggle from '@/components/ThemeToggle'; // 🚀 IMPORTED THE TOGGLE
 
 interface WalletData { name: string; wallet: number; transactions: Array<any>; gameHistory: Array<any>; }
 
@@ -30,10 +31,8 @@ function GameHistoryLogs({ tgId }: { tgId: number }) {
       try {
         const { data: cardsData, error: cardsError } = await supabase
           .from('bingo_cards')
-          // 🔧 CORRECTED: Requesting 'joined_at' instead of 'created_at'
           .select('room_id, joined_at, win_claimed, payout_amount')
           .eq('tg_id', tgId)
-          // 🔧 CORRECTED: Ordering by 'joined_at'
           .order('joined_at', { ascending: false })
           .limit(15);
 
@@ -54,7 +53,6 @@ function GameHistoryLogs({ tgId }: { tgId: number }) {
           const formattedLogs = cardsData.map((entry: any) => ({
             id: entry.room_id.substring(0, 6).toUpperCase(),
             stake: roomFeeMap[entry.room_id] || 10,
-            // 🔧 CORRECTED: Mapping the date from 'joined_at'
             date: new Date(entry.joined_at).toLocaleDateString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
             won: entry.win_claimed,
             payout: entry.payout_amount || 0
@@ -83,7 +81,6 @@ function GameHistoryLogs({ tgId }: { tgId: number }) {
         <div className="text-center py-10 text-[#064E3B]/60 dark:text-white/40 bg-white dark:bg-[#062416] rounded-xl border border-[#22C55E]/30 dark:border-white/5 shadow-sm dark:shadow-none font-medium">No games played yet.</div>
       ) : (
         logs.map((log, idx) => (
-          // 🚀 PHASE 4: PREMIUM BINARY STYLING
           <div key={idx} className={`bg-white dark:bg-[#062416] border ${log.won ? 'border-yellow-400 dark:border-yellow-500/50 shadow-[0_0_15px_rgba(250,204,21,0.15)]' : 'border-[#22C55E]/20 dark:border-white/5 opacity-80'} rounded-xl p-4 flex justify-between items-center shadow-sm dark:shadow-none transition-colors`}>
             <div>
               <div className="flex items-center gap-2 mb-1">
@@ -116,7 +113,7 @@ function GameHistoryLogs({ tgId }: { tgId: number }) {
 // ============================================================================
 export default function BingoPage() {
   const { tgId, isTelegram, haptic } = useTelegram();
-  const { screen, fetchRooms, isRecovering, recoverSession, loadingRooms, theme, toggleTheme } = useBingoStore();
+  const { screen, fetchRooms, isRecovering, recoverSession, loadingRooms, theme } = useBingoStore();
 
   const [tab, setTab] = useState<'home' | 'logs' | 'top' | 'profile'>('home');
   const [loadingStakeId, setLoadingStakeId] = useState<string | null>(null);
@@ -169,7 +166,7 @@ export default function BingoPage() {
 
   if (!isTelegram && !tgId) {
     return (
-      <div className={`min-h-screen bg-[#F0FDF4] dark:bg-[#042014] flex items-center justify-center p-6 safe-area ${theme === 'dark' ? 'dark' : ''}`}>
+      <div className={`min-h-screen bg-[#F0FDF4] dark:bg-[#042014] flex items-center justify-center p-6 safe-area`}>
         <div className="text-center">
           <div className="text-5xl mb-4">🎱</div>
           <h2 className="text-[#022C22] dark:text-white text-xl font-bold mb-2">CHELA Bingo</h2>
@@ -181,7 +178,7 @@ export default function BingoPage() {
 
   if (isRecovering && tgId) {
     return (
-      <div className={`min-h-screen bg-[#F0FDF4] dark:bg-[#042014] flex flex-col items-center justify-center safe-area ${theme === 'dark' ? 'dark' : ''}`}>
+      <div className={`min-h-screen bg-[#F0FDF4] dark:bg-[#042014] flex flex-col items-center justify-center safe-area`}>
         <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
         <p className="text-emerald-500 mt-4 font-mono font-bold tracking-widest animate-pulse">RECOVERING SESSION...</p>
       </div>
@@ -198,7 +195,7 @@ export default function BingoPage() {
   ];
 
   return (
-    <div className={`w-full h-dvh bg-[#F0FDF4] dark:bg-[#02120b] text-[#022C22] dark:text-white flex flex-col font-sans relative overflow-hidden transition-colors duration-500 ${theme === 'dark' ? 'dark' : ''}`}>
+    <div className={`w-full h-dvh bg-[#F0FDF4] dark:bg-[#02120b] text-[#022C22] dark:text-white flex flex-col font-sans relative overflow-hidden transition-colors duration-500`}>
       
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] left-[-20%] w-96 h-96 bg-green-500/10 rounded-full blur-3xl"></div>
@@ -214,14 +211,10 @@ export default function BingoPage() {
             </motion.div>
           </motion.button>
           
-          <motion.button whileTap={{ scale: 0.85 }} onClick={() => { try { if (isTelegram && haptic && typeof haptic.selection === 'function') haptic.selection(); } catch(e){} toggleTheme(); }}
-            className="w-10 h-10 flex items-center justify-center rounded-full bg-[#DCFCE7] dark:bg-white/5 border border-[#22C55E]/30 dark:border-white/10 text-[#064E3B] dark:text-white/60 hover:bg-[#bbf7d0] dark:hover:bg-white/15 dark:hover:text-white transition-all shadow-sm">
-            <AnimatePresence mode="wait">
-              <motion.span key={theme} initial={{ opacity: 0, rotate: -90, scale: 0.5 }} animate={{ opacity: 1, rotate: 0, scale: 1 }} exit={{ opacity: 0, rotate: 90, scale: 0.5 }} transition={{ duration: 0.2 }} className="text-lg">
-                {theme === 'dark' ? '☀️' : '🌙'}
-              </motion.span>
-            </AnimatePresence>
-          </motion.button>
+          {/* 🚀 THE FIXED THEME TOGGLE: Preserves your styling but uses the new component */}
+          <div className="w-10 h-10 flex items-center justify-center rounded-full bg-[#DCFCE7] dark:bg-white/5 border border-[#22C55E]/30 dark:border-white/10 text-[#064E3B] dark:text-white/60 hover:bg-[#bbf7d0] dark:hover:bg-white/15 dark:hover:text-white transition-all shadow-sm overflow-hidden">
+             <ThemeToggle />
+          </div>
         </div>
 
         <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5">

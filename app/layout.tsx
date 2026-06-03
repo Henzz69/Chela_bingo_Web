@@ -24,7 +24,6 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // 🚀 UNLOCKED: Removed the hardcoded 'dark' class so the app can freely toggle
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
@@ -36,6 +35,7 @@ export default function RootLayout({
           strategy="beforeInteractive"
         />
       </head>
+      {/* Dynamic background colors added, dark mode hardcoding removed */}
       <body suppressHydrationWarning className="min-h-full flex flex-col bg-[#F0FDF4] dark:bg-[#02120b] transition-colors duration-500">
         {children}
       </body>
