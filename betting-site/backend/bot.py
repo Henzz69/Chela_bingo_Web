@@ -5,6 +5,7 @@ Handles: /start → Language Selection → Contact Registration → Play, Deposi
 Bilingual Support: English & Amharic (አማርኛ)
 Automated Verification: Integrated with verify.leul.et API
 Security: Bulletproof Optimistic Locking, Universal Destination Validation, & X-Ray Logging
+Referral Engine: Deep-link interception and Split-Wallet display.
 """
 
 import os
@@ -70,16 +71,19 @@ if SUPABASE_URL and SUPABASE_SERVICE_KEY:
         print(f"--- ERROR creating Supabase client: {e} ---")
         _supabase = None
 
-def _get_user_balance(tg_id: int) -> float:
+# 🚀 UPGRADED: Now fetches both total balance and locked promo balance
+def _get_user_wallet(tg_id: int) -> tuple[float, float]:
     if _supabase is None:
-        return 0.00
+        return 0.00, 0.00
     try:
-        result = _supabase.table("tg_users").select("balance").eq("tg_id", tg_id).maybe_single().execute()
-        if result.data and result.data.get("balance") is not None:
-            return float(result.data["balance"])
+        result = _supabase.table("tg_users").select("balance, promo_balance").eq("tg_id", tg_id).maybe_single().execute()
+        if result.data:
+            total = float(result.data.get("balance") or 0.00)
+            promo = float(result.data.get("promo_balance") or 0.00)
+            return total, promo
     except Exception as e:
-        print(f"[balance lookup error] {e}")
-    return 0.00
+        print(f"[wallet lookup error] {e}")
+    return 0.00, 0.00
 
 def _is_user_registered(tg_id: int) -> bool:
     if _supabase is None:
@@ -145,7 +149,6 @@ bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 bot.delete_webhook(drop_pending_updates=True)
 
 try:
-    # 🚀 /start is at the absolute top of the commands list
     bot.set_my_commands([
         BotCommand("start", "Main Menu / ዋና ማውጫ"),
         BotCommand("play", "Launch Bingo / ጨዋታ ጀምር"),
@@ -161,6 +164,7 @@ except Exception:
 user_state: dict[int, str] = {}
 user_lang: dict[int, str] = {}  
 user_deposit_data: dict[int, dict] = {} 
+user_ref_data: dict[int, int] = {} # 🚀 NEW: Temporarily holds the referrer ID
 
 STATE_IDLE              = "IDLE"
 STATE_AWAITING_DEPOSIT  = "AWAITING_DEPOSIT"
@@ -195,13 +199,14 @@ STRINGS = {
         "cancel_btn": "❌ Cancel",
         "invalid_contact": "⚠️ Please share *your own* contact.",
         "reg_success": "✅ *Registration Complete!*\n\nWelcome aboard! Your account is verified.\nUse the menu below to manage your wallet.",
-        "curr_bal": "💰 *Current Balance:* `{:.2f} ETB`",
+        "curr_bal": "💰 *Wallet Breakdown:*\n\n💵 *Total Balance:* `{:.2f} ETB`\n🔓 *Withdrawable:* `{:.2f} ETB`\n🎁 *Promo/Bingo Cash:* `{:.2f} ETB`",
         "enter_amount": "📥 *Deposit Amount*\n\nPlease enter or select the exact amount of ETB you want to deposit:",
         "enter_with_amount": "📤 *Withdraw Funds*\n\nPlease enter the amount you want to withdraw:",
         "invalid_amount": "⚠️ Please enter a valid positive number.",
         "min_dep_err": "⚠️ *Invalid Amount:* The minimum deposit amount is 50 ETB.",
         "min_with_err": "⚠️ *Invalid Amount:* The minimum withdrawal amount is 100 ETB.",
-        "insufficient": "❌ Insufficient Balance. You only have `{:.2f} ETB`.",
+        "insufficient": "❌ Insufficient Balance. You only have `{:.2f} ETB` withdrawable cash.",
+        "promo_locked_err": "❌ *Withdrawal Failed*\n\nYou requested more than your withdrawable limit.\n\n🔓 Withdrawable: `{:.2f} ETB`\n🎁 Promo (Gameplay Only): `{:.2f} ETB`",
         "with_submitted": "✅ Withdrawal request of `{:.0f} ETB` submitted! Our team will process it shortly.",
         "action_cancelled": "Action cancelled.",
         "choose_provider": "💳 *Select Deposit Provider*\n\nPlease select the preferred banking platform for payment verification:",
@@ -211,7 +216,7 @@ STRINGS = {
         "api_fail": "❌ *Verification Failed:*\nInvalid Transaction ID or the reference has expired/already been processed.",
         "api_used": "🚨 *Fraud Alert:*\nThis Transaction ID is currently processing or has already been credited. Double-spending is not allowed.",
         "api_error": "🚨 *System Error:*\nBank verification services are currently experiencing delays. Please try again later.",
-        "invite_msg": "🎁 *Invite Friends & Earn!*\n\nShare this bot with your friends and earn rewards when they play.\n\nYour Invite Link:\n`https://t.me/ChelaBingoBot?start={}`",
+        "invite_msg": "🎁 *Invite Friends & Earn!*\n\nShare this bot with your friends. Once 5 of them join and deposit, you automatically receive a 50 ETB Promo Bonus for free gameplay!\n\nYour Invite Link:\n`https://t.me/ChelaBingoBot?start=REF_{}`",
         "support_msg": "🎧 *CHELA Bingo Support*\n\nNeed help with a deposit, withdrawal, or a game issue? Our team is here 24/7.\n\nContact us directly: @ChelaSupport",
         
         "inst_telebirr": "Telebirr Account\n\n<code>0919184337</code>\n\n<blockquote>1. Send {} ETB to the Telebirr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from Telebirr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the Telebirr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
@@ -230,13 +235,14 @@ STRINGS = {
         "cancel_btn": "❌ ሰርዝ",
         "invalid_contact": "⚠️ እባክዎን *የራስዎን* ስልክ ያጋሩ።",
         "reg_success": "✅ *ምዝገባው ተጠናቋል!*\n\nእንኳን ደህና መጡ! መለያዎ ተረጋግጧል።\nየኪስ ቦርሳዎን ለማስተዳደር ከታች ያለውን ምናሌ ይጠቀሙ።",
-        "curr_bal": "💰 *የአሁኑ ቀሪ ሂሳብ:* `{:.2f} ETB`",
+        "curr_bal": "💰 *የኪስ ቦርሳዎ:*\n\n💵 *ጠቅላላ ቀሪ ሂሳብ:* `{:.2f} ETB`\n🔓 *ማውጣት የሚቻለው:* `{:.2f} ETB`\n🎁 *የቦነስ/ፕሮሞ ሂሳብ:* `{:.2f} ETB`",
         "enter_amount": "📥 *የማስቀመጫ መጠን*\n\nእባክዎ ማስገባት የሚፈልጉትን የገንዘብ መጠን በETB ያስገቡ ወይም ይምረጡ:",
         "enter_with_amount": "📤 *ገንዘብ ማውጫ*\n\nእባክዎ ማውጣት የሚፈልጉትን የገንዘብ መጠን ያስገቡ:",
         "invalid_amount": "⚠️ እባክዎን ትክክለኛ ቁጥር ያስገቡ።",
         "min_dep_err": "⚠️ *የተሳሳተ መጠን:* አነስተኛው የገንዘብ ማስገቢያ መጠን 50 ETB ነው።",
         "min_with_err": "⚠️ *የተሳሳተ መጠን:* አነስተኛው የገንዘብ ማውጫ መጠን 100 ETB ነው።",
-        "insufficient": "❌ በቂ ቀሪ ሂሳብ የለዎትም። ያለዎት `{:.2f} ETB` ብቻ ነው።",
+        "insufficient": "❌ በቂ ቀሪ ሂሳብ የለዎትም። ማውጣት የሚችሉት `{:.2f} ETB` ብቻ ነው።",
+        "promo_locked_err": "❌ *ማውጣት አልተሳካም*\n\nከሚፈቀደው የማውጫ መጠን በላይ ጠይቀዋል።\n\n🔓 ማውጣት የሚቻለው: `{:.2f} ETB`\n🎁 ፕሮሞ (ለመጫወቻ ብቻ): `{:.2f} ETB`",
         "with_submitted": "✅ የ `{:.0f} ETB` ማውጫ ጥያቄዎ ቀርቧል! በቅርቡ እናስተናግዳለን።",
         "action_cancelled": "ድርጊቱ ተሰርዟል።",
         "choose_provider": "💳 *የክፍያ መንገድ ይምረጡ*\n\nእባክዎ ለማረጋገጫ የሚጠቀሙበትን የባንክ ወይም የክፍያ አማራጭ ይምረጡ:",
@@ -246,7 +252,7 @@ STRINGS = {
         "api_fail": "❌ *ማረጋገጫው አልተሳካም:*\nየግብይት መለያ ቁጥሩ የተሳሳተ ነው ወይም ከዚህ በፊት ጥቅም ላይ ውሏል።",
         "api_used": "🚨 *የማጭበርበር ሙከራ:*\nይህ የግብይት መለያ ቁጥር ከዚህ በፊት ጥቅም ላይ ውሏል። አንድን ደረሰኝ ደጋግሞ መጠቀም አይቻልም።",
         "api_error": "🚨 *የስርዓት መቆራረጥ:*\nየባንክ ማረጋገጫ መስመሮች ስራ በዝቶባቸዋል። እባክዎ ከጥቂት ደቂቃዎች በኋላ እንደገና ይሞክሩ።",
-        "invite_msg": "🎁 *ጓደኞችዎን ይጋብዙ!*\n\nይህን ቦት ለጓደኞችዎ በማጋራት ሲጫወቱ ሽልማቶችን ያግኙ።\n\nየመጋበዣ ሊንክዎ:\n`https://t.me/ChelaBingoBot?start={}`",
+        "invite_msg": "🎁 *ጓደኞችዎን ይጋብዙ!*\n\nይህን ቦት ለጓደኞችዎ በማጋራት 5ቱ ሲመዘገቡና ክፍያ ሲፈፅሙ የ 50 ETB ፕሮሞ ቦነስ በራስ ሰር ያገኛሉ!\n\nየመጋበዣ ሊንክዎ:\n`https://t.me/ChelaBingoBot?start=REF_{}`",
         "support_msg": "🎧 *የቼላ ቢንጎ ድጋፍ ማዕከል*\n\nስለ ክፍያ፣ ገንዘብ ማውጣት ወይም ጨዋታ እርዳታ ይፈልጋሉ? ቡድናችን 24/7 ዝግጁ ነው።\n\nያነጋግሩን: @ChelaSupport",
         
         "inst_telebirr": "የቴሌብር አካውንት\n\n<code>0919184337</code>\n\n<blockquote>1. Send {} ETB to the Telebirr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from Telebirr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the Telebirr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
@@ -292,7 +298,6 @@ def cancel_reply_keyboard(lang: str) -> ReplyKeyboardMarkup:
     return kb
 
 def payment_methods_markup() -> InlineKeyboardMarkup:
-    # ❌ CBE option permanently removed from standard selection array
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
         InlineKeyboardButton("Telebirr 📱", callback_data="dep_prov|telebirr"),
@@ -354,6 +359,17 @@ def cmd_start(message):
     chat_id = message.chat.id
     set_state(chat_id, STATE_IDLE)
     
+    # 🚀 THE VIRAL INTERCEPTOR: Catch ?start=REF_ID deep links
+    parts = message.text.split()
+    if len(parts) > 1 and parts[1].startswith("REF_"):
+        try:
+            ref_id = int(parts[1].split("_")[1])
+            # Ensure they aren't referring themselves
+            if ref_id != message.from_user.id:
+                user_ref_data[chat_id] = ref_id
+        except Exception:
+            pass
+
     if _is_user_registered(message.from_user.id):
         lang = get_lang(chat_id)
         bot.send_message(
@@ -392,8 +408,9 @@ def cmd_support(message):
 def cmd_balance(message):
     chat_id = message.chat.id
     lang = get_lang(chat_id)
-    balance = _get_user_balance(message.from_user.id)
-    bot.send_message(chat_id, STRINGS[lang]["curr_bal"].format(balance))
+    total_bal, promo_bal = _get_user_wallet(message.from_user.id)
+    withdrawable = total_bal - promo_bal
+    bot.send_message(chat_id, STRINGS[lang]["curr_bal"].format(total_bal, withdrawable, promo_bal))
     bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
 
 @bot.message_handler(commands=["deposit"])
@@ -445,13 +462,23 @@ def handle_contact(message):
     username    = message.from_user.username
     phone       = contact.phone_number  
     display     = f"{first_name} {last_name}".strip() or f"Player_{tg_id}"
+    
+    # Fetch intercepted referrer ID
+    ref_id = user_ref_data.get(chat_id, None)
 
     if _supabase is not None:
         try:
-            _supabase.table("tg_users").upsert({
-                "tg_id": tg_id, "display_name": display, "tg_username": username,
-                "phone": phone, "password_hash": "telegram_native_auth",
-            }, on_conflict="tg_id").execute()
+            payload = {
+                "tg_id": tg_id, 
+                "display_name": display, 
+                "tg_username": username,
+                "phone": phone, 
+                "password_hash": "telegram_native_auth"
+            }
+            if ref_id:
+                payload["referrer_id"] = ref_id
+
+            _supabase.table("tg_users").upsert(payload, on_conflict="tg_id").execute()
         except Exception:
             bot.send_message(chat_id, "❌ Server error. Try /start again.", reply_markup=remove_keyboard())
             return
@@ -484,8 +511,9 @@ def handle_callback(call):
 
     elif data == "action_balance":
         bot.answer_callback_query(call.id)
-        balance = _get_user_balance(call.from_user.id)
-        bot.send_message(chat_id, STRINGS[lang]["curr_bal"].format(balance))
+        total_bal, promo_bal = _get_user_wallet(call.from_user.id)
+        withdrawable = total_bal - promo_bal
+        bot.send_message(chat_id, STRINGS[lang]["curr_bal"].format(total_bal, withdrawable, promo_bal))
         bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
 
     elif data == "action_deposit":
@@ -554,11 +582,6 @@ def handle_text(message):
         dep_info = user_deposit_data.get(chat_id, {"provider": "telebirr", "amount": 0.0})
         expected_amount = float(dep_info.get("amount", 0.0))
         
-        print("\n" + "="*50)
-        print(f"🔍 [X-RAY] INITIATING DEPOSIT VERIFICATION")
-        print(f"🔍 Extracted Ref: {clean_txn_id}")
-        print("="*50)
-        
         if not _reserve_transaction(clean_txn_id, message.from_user.id, expected_amount):
             bot.send_message(chat_id, STRINGS[lang]["api_used"], reply_markup=remove_keyboard())
             bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
@@ -623,13 +646,11 @@ def handle_text(message):
                 return
 
             if verified_amount >= expected_amount and verified_amount > 0:
-                current_balance = _get_user_balance(message.from_user.id)
-                new_balance = current_balance + verified_amount
+                total_bal, promo_bal = _get_user_wallet(message.from_user.id)
+                new_balance = total_bal + verified_amount
                 
                 if _supabase is not None:
-                    # 1. Update the user's running wallet balance
                     _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
-                    # 2. Pipeline a completed record into the admin ledger
                     _supabase.table("transactions").insert({
                         "user_id": str(message.from_user.id),
                         "amount": verified_amount,
@@ -674,7 +695,6 @@ def handle_text(message):
             return
 
         if state == STATE_AWAITING_DEPOSIT:
-            # Barrier Enforcement: 50 ETB Minimum Deposit
             if amount < 50:
                 bot.send_message(chat_id, STRINGS[lang]["min_dep_err"])
                 return
@@ -690,23 +710,21 @@ def handle_text(message):
             bot.send_message(chat_id, inst_txt, reply_markup=cancel_reply_keyboard(lang), parse_mode="HTML")
 
         elif state == STATE_AWAITING_WITHDRAW:
-            # Barrier Enforcement: 100 ETB Minimum Withdrawal
             if amount < 100:
                 bot.send_message(chat_id, STRINGS[lang]["min_with_err"])
                 return
                 
-            user_balance = _get_user_balance(message.from_user.id)
+            total_bal, promo_bal = _get_user_wallet(message.from_user.id)
+            withdrawable = total_bal - promo_bal
             set_state(chat_id, STATE_IDLE)
             
-            if amount > user_balance:
-                bot.send_message(chat_id, STRINGS[lang]["insufficient"].format(user_balance), reply_markup=remove_keyboard())
+            if amount > withdrawable:
+                bot.send_message(chat_id, STRINGS[lang]["promo_locked_err"].format(withdrawable, promo_bal), reply_markup=remove_keyboard())
             else:
                 if _supabase is not None:
-                    # Secure Escrow Hook: Deduct the pending withdrawal funds instantly
-                    new_balance = user_balance - amount
+                    new_balance = total_bal - amount
                     _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
                     
-                    # Direct Dashboard Stream: Pipeline request parameters to database table natively
                     _supabase.table("transactions").insert({
                         "user_id": str(message.from_user.id),
                         "amount": amount,
@@ -714,7 +732,6 @@ def handle_text(message):
                         "status": "pending"
                     }).execute()
 
-                # Clean submission exit notice (No legacy admin Telegram ping here)
                 bot.send_message(chat_id, STRINGS[lang]["with_submitted"].format(amount), reply_markup=remove_keyboard())
 
             bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
@@ -757,8 +774,8 @@ def cmd_credit(message):
         return
 
     try:
-        current = _get_user_balance(target_tg_id)
-        new_bal = current + amount
+        total_bal, promo_bal = _get_user_wallet(target_tg_id)
+        new_bal = total_bal + amount
         _supabase.table("tg_users").update({"balance": new_bal}).eq("tg_id", target_tg_id).execute()
 
         bot.send_message(chat_id, f"✅ *Credited {amount:.2f} ETB* to `{target_tg_id}`.\n\n💰 *New balance:* `{new_bal:.2f} ETB`")
