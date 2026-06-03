@@ -1,6 +1,13 @@
 @import "tailwindcss";
 
 :root {
+  /* LIGHT MODE DEFAULT */
+  --background: #F0FDF4; /* Using the light green from your layout.tsx */
+  --foreground: #1a1d23;
+}
+
+.dark {
+  /* DARK MODE OVERRIDE */
   --background: #1a1d23;
   --foreground: #ffffff;
 }
@@ -8,16 +15,14 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* ✅ Fixed: Use the Geist font variables loaded in layout.tsx instead of Arial */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-/* No separate dark-mode override needed — the app is always dark */
-
 body {
   background: var(--background);
   color: var(--foreground);
-  /* ✅ Fixed: Removed hardcoded Arial/Helvetica — Geist is applied via CSS variable */
   font-family: var(--font-sans), system-ui, sans-serif;
+  /* Add smooth transition for theme switching */
+  transition: background-color 0.3s ease, color 0.3s ease; 
 }
