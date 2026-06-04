@@ -137,7 +137,7 @@ def _start_tunnel(port: int = 3000) -> str:
     _tunnel_proc = subprocess.Popen(["npx", "localtunnel", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
     url = None
     for line in _tunnel_proc.stdout:
-        match = re.search(r"your url is:\s*(https://S+)", line)
+        match = re.search(r"your url is:\s*(https://\S+)", line)
         if match:
             url = match.group(1).strip()
             break
@@ -245,6 +245,8 @@ STRINGS = {
         "api_error": "🚨 *System Error:*\nBank verification services are currently experiencing delays. Please try again later.",
         "invite_msg": "🎁 *Invite Friends & Earn!*\n\nShare this bot with your friends. Once 5 of them join and deposit, you automatically receive a 50 ETB Promo Bonus for free gameplay!\n\nYour Invite Link:\n`https://t.me/ChelaBingoBot?start=REF_{}`",
         "support_msg": "🎧 *CHELA Bingo Support*\n\nNeed help with a deposit, withdrawal, or a game issue? Our team is here 24/7.\n\nContact us directly: @ChelaSupport",
+        "locked_warning": "⚠️ Please complete or cancel your current action first.",
+        "cancel_instruction": "⬇️ Press the Cancel button below to abort.",
         
         "inst_telebirr": "Telebirr Account\n\n<code>0966617175</code>\n\n<blockquote>\n\nCheck if the name is HENOK.\n\n1. Send {} ETB to the Telebirr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from Telebirr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the Telebirr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
         "inst_mpesa": "M-Pesa Account\n\n<code>0723191843</code>\n\n<blockquote>1. Send {} ETB to the M-Pesa account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from M-Pesa containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the M-Pesa account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
@@ -282,6 +284,8 @@ STRINGS = {
         "api_error": "🚨 *የስርዓት መቆራረጥ:*\nየባንክ ማረጋገጫ መስመሮች ስራ በዝቶባቸዋል። እባክዎ ከጥቂት ደቂቃዎች በኋላ እንደገና ይሞክሩ።",
         "invite_msg": "🎁 *ጓደኞችዎን ይጋብዙ!*\n\nይህን ቦት ለጓደኞችዎ በማጋራት 5ቱ ሲመዘገቡና ክፍያ ሲፈፅሙ የ 50 ETB ፕሮሞ ቦነስ በራስ ሰር ያገኛሉ!\n\nየመጋበዣ ሊንክዎ:\n`https://t.me/ChelaBingoBot?start=REF_{}`",
         "support_msg": "🎧 *የቼላ ቢንጎ ድጋፍ ማዕከል*\n\nስለ ክፍያ፣ ገንዘብ ማውጣት ወይም ጨዋታ እርዳታ ይፈልጋሉ? ቡድናችን 24/7 ዝግጁ ነው።\n\nያነጋግሩን: @ChelaSupport",
+        "locked_warning": "⚠️ እባክዎ መጀመሪያ አሁን የጀመሩትን ሂደት ያጠናቅቁ ወይም ይሰርዙ።",
+        "cancel_instruction": "⬇️ ለማቋረጥ ከታች ያለውን የሰርዝ ቁልፍ ይጫኑ።",
         
         "inst_telebirr": "የቴሌብር አካውንት\n\n<code>0966617175</code>\n\n<blockquote>1. Send {} ETB to the Telebirr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from Telebirr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the Telebirr account provided above. If you send money to an agent other than the one provided, a 2 penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
         "inst_mpesa": "የኤም-ፔሳ (M-Pesa) አካውንት\n\n<code>0723191843</code>\n\n<blockquote>1. Send {} ETB to the M-Pesa account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from M-Pesa containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the M-Pesa account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
@@ -418,6 +422,8 @@ def cmd_start(message):
     if not can_execute_command(message, allow_group_admin=False): return
     
     chat_id = message.chat.id
+    
+    # Emergency hatch: /start ALWAYS breaks the lock and resets state
     set_state(chat_id, STATE_IDLE)
     
     parts = message.text.split()
@@ -456,6 +462,12 @@ def cmd_play(message):
     if not can_execute_command(message, allow_group_admin=True): return
     
     chat_id = message.chat.id
+    lang = get_lang(chat_id)
+    
+    if get_state(chat_id) != STATE_IDLE:
+        bot.send_message(chat_id, STRINGS[lang]["locked_warning"], reply_markup=cancel_reply_keyboard(lang))
+        return
+
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("🎮 አሁን ይጫወቱ (Play Now)", web_app=WebAppInfo(url=MINI_APP_URL)))
     
@@ -482,6 +494,12 @@ def cmd_invite(message):
     if not can_execute_command(message, allow_group_admin=False): return
     
     chat_id = message.chat.id
+    lang = get_lang(chat_id)
+    
+    if get_state(chat_id) != STATE_IDLE:
+        bot.send_message(chat_id, STRINGS[lang]["locked_warning"], reply_markup=cancel_reply_keyboard(lang))
+        return
+
     ref_link = f"https://t.me/ChelaBingoBot?start=REF_{message.from_user.id}"
     
     invite_text = (
@@ -520,6 +538,11 @@ def cmd_support(message):
     
     chat_id = message.chat.id
     lang = get_lang(chat_id)
+    
+    if get_state(chat_id) != STATE_IDLE:
+        bot.send_message(chat_id, STRINGS[lang]["locked_warning"], reply_markup=cancel_reply_keyboard(lang))
+        return
+
     bot.send_message(chat_id, STRINGS[lang]["support_msg"])
 
 @bot.message_handler(commands=["balance"])
@@ -528,6 +551,11 @@ def cmd_balance(message):
     
     chat_id = message.chat.id
     lang = get_lang(chat_id)
+    
+    if get_state(chat_id) != STATE_IDLE:
+        bot.send_message(chat_id, STRINGS[lang]["locked_warning"], reply_markup=cancel_reply_keyboard(lang))
+        return
+
     real_bal, promo_bal, total_bal = _get_user_wallet(message.from_user.id)
     bot.send_message(chat_id, STRINGS[lang]["curr_bal"].format(total_bal, real_bal, promo_bal))
     bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
@@ -538,6 +566,13 @@ def cmd_deposit(message):
     
     chat_id = message.chat.id
     lang = get_lang(chat_id)
+    
+    if get_state(chat_id) != STATE_IDLE:
+        bot.send_message(chat_id, STRINGS[lang]["locked_warning"], reply_markup=cancel_reply_keyboard(lang))
+        return
+
+    set_state(chat_id, STATE_AWAITING_DEPOSIT)
+    bot.send_message(chat_id, STRINGS[lang]["cancel_instruction"], reply_markup=cancel_reply_keyboard(lang))
     bot.send_message(chat_id, STRINGS[lang]["choose_provider"], reply_markup=payment_methods_markup())
 
 @bot.message_handler(commands=["withdraw"])
@@ -546,6 +581,11 @@ def cmd_withdraw(message):
     
     chat_id = message.chat.id
     lang = get_lang(chat_id)
+    
+    if get_state(chat_id) != STATE_IDLE:
+        bot.send_message(chat_id, STRINGS[lang]["locked_warning"], reply_markup=cancel_reply_keyboard(lang))
+        return
+
     set_state(chat_id, STATE_AWAITING_WITHDRAW)
     bot.send_message(chat_id, STRINGS[lang]["enter_with_amount"], reply_markup=cancel_reply_keyboard(lang))
 
@@ -611,6 +651,10 @@ def handle_contact(message):
     chat_id = message.chat.id
     contact = message.contact
     lang    = get_lang(chat_id)
+    
+    if get_state(chat_id) != STATE_IDLE:
+        bot.send_message(chat_id, STRINGS[lang]["locked_warning"], reply_markup=cancel_reply_keyboard(lang))
+        return
 
     if contact.user_id != message.from_user.id:
         bot.send_message(chat_id, STRINGS[lang]["invalid_contact"], reply_markup=registration_markup(lang))
@@ -656,6 +700,18 @@ def handle_callback(call):
     chat_id = call.message.chat.id
     data    = call.data
     lang    = get_lang(chat_id)
+    state   = get_state(chat_id)
+
+    # State Locking Enforcement for Callbacks
+    if state != STATE_IDLE:
+        is_allowed = False
+        # Only allow advancing the deposit flow if they are in the deposit state
+        if state == STATE_AWAITING_DEPOSIT and (data.startswith("dep_prov|") or data.startswith("dep_amt|")):
+            is_allowed = True
+            
+        if not is_allowed:
+            bot.answer_callback_query(call.id, STRINGS[lang]["locked_warning"], show_alert=True)
+            return
 
     if data.startswith("set_lang|"):
         bot.answer_callback_query(call.id)
@@ -687,13 +743,14 @@ def handle_callback(call):
 
     elif data == "action_deposit":
         bot.answer_callback_query(call.id)
+        set_state(chat_id, STATE_AWAITING_DEPOSIT)
+        bot.send_message(chat_id, STRINGS[lang]["cancel_instruction"], reply_markup=cancel_reply_keyboard(lang))
         bot.send_message(chat_id, STRINGS[lang]["choose_provider"], reply_markup=payment_methods_markup())
 
     elif data.startswith("dep_prov|"):
         bot.answer_callback_query(call.id)
         provider = data.split("|")[1]
         user_deposit_data[chat_id] = {"provider": provider}
-        set_state(chat_id, STATE_AWAITING_DEPOSIT)
         bot.send_message(chat_id, STRINGS[lang]["enter_amount"], reply_markup=cancel_reply_keyboard(lang))
         bot.send_message(chat_id, "💡 Quick Options:", reply_markup=quick_amount_markup())
 
@@ -763,6 +820,7 @@ def handle_text(message):
     state   = get_state(chat_id)
     lang    = get_lang(chat_id)
 
+    # Breaking the lock gracefully
     if text in (STRINGS["en"]["cancel_btn"], STRINGS["am"]["cancel_btn"]):
         set_state(chat_id, STATE_IDLE)
         bot.send_message(chat_id, STRINGS[lang]["action_cancelled"], reply_markup=remove_keyboard())
