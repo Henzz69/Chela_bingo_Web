@@ -137,7 +137,7 @@ def _start_tunnel(port: int = 3000) -> str:
     _tunnel_proc = subprocess.Popen(["npx", "localtunnel", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
     url = None
     for line in _tunnel_proc.stdout:
-        match = re.search(r"your url is:\s*(https://\S+)", line)
+        match = re.search(r"your url is:\s*(https://S+)", line)
         if match:
             url = match.group(1).strip()
             break
@@ -214,13 +214,15 @@ def can_execute_command(message, allow_group_admin=False) -> bool:
 STRINGS = {
     "en": {
         "welcome_back": "🎱 *CHELA Bingo*\n\nWelcome back to the lobby! You're fully registered and ready to go.\n\n• Click *PLAY CHELA BINGO* to launch multiplayer app.\n• Manage funds securely below.",
-        "welcome_new": "🎱 *CHELA Bingo*\n\nWelcome to the most exciting 100-Player Bingo platform in Ethiopia!\n\nTo get started, tap the button below to link your Telegram account securely.",
+        "welcome_new": "🎱 *CHELA Bingo*\n\nWelcome to the most exciting 100-Player Bingo platform in Ethiopia!\n\n🎁 *Registration Bonus: 10 ETB!*\nTo get started, tap the button below to link your Telegram account securely.",
         "reg_btn": "📱 Register to Play",
         "play_btn": "🎮 PLAY CHELA BINGO",
         "dep_btn": "Deposit ➕",
         "with_btn": "Withdraw ➖",
         "bal_btn": "💰 My Balance",
         "lang_btn": "🌐 Language / ቋንቋ",
+        "inv_btn": "🎁 Invite Friends",
+        "sup_btn": "🎧 Support",
         "cancel_btn": "❌ Cancel",
         "invalid_contact": "⚠️ Please share *your own* contact.",
         "reg_success": "✅ *Registration Complete!*\n\nWelcome aboard! Your account is verified.\nUse the menu below to manage your wallet.",
@@ -249,13 +251,15 @@ STRINGS = {
     },
     "am": {
         "welcome_back": "🎱 *ቼላ ቢንጎ (CHELA Bingo)*\n\nወደ መጫወቻው አዳራሽ በደህና መጡ! ምዝገባዎ ተጠናቋል።\n\n• የቢንጎ መተግበሪያውን ለመክፈት *PLAY CHELA BINGO* የሚለውን ይጫኑ።\n• ሂሳብዎን ከታች ባለው መቆጣጠሪያ ማስተዳደር ይችላሉ።",
-        "welcome_new": "🎱 *ቼላ ቢንጎ (CHELA Bingo)*\n\nበኢትዮጵያ ውስጥ ወደሚገኘው እጅግ አስደሳች የ100 ተጫዋቾች የቢንጎ መድረክ እንኳን በደህና መጡ!\n\nለመጀመር የቴሌግራም አካውንትዎን ደህንነቱ በተጠበቀ ሁኔታ ለማገናኘት ከታች ያለውን ቁልፍ ይጫኑ።",
+        "welcome_new": "🎱 *ቼላ ቢንጎ (CHELA Bingo)*\n\nበኢትዮጵያ ውስጥ ወደሚገኘው እጅግ አስደሳች የ100 ተጫዋቾች የቢንጎ መድረክ እንኳን በደህና መጡ!\n\n🎁 *የምዝገባ ቦነስ፡ 10 ETB!*\nለመጀመር የቴሌግራም አካውንትዎን ደህንነቱ በተጠበቀ ሁኔታ ለማገናኘት ከታች ያለውን ቁልፍ ይጫኑ።",
         "reg_btn": "📱 ለመጫወት ይመዝገቡ",
         "play_btn": "🎮 ቼላ ቢንጎ ይጫወቱ (PLAY)",
         "dep_btn": "ብር አስገባ ➕",
         "with_btn": "ብር አውጣ ➖",
         "bal_btn": "💰 የኔ ቀሪ ሂሳብ",
         "lang_btn": "🌐 Language / ቋንቋ",
+        "inv_btn": "🎁 ጓደኛ ጋብዝ",
+        "sup_btn": "🎧 የድጋፍ ማዕከል",
         "cancel_btn": "❌ ሰርዝ",
         "invalid_contact": "⚠️ እባክዎን *የራስዎን* ስልክ ያጋሩ።",
         "reg_success": "✅ *ምዝገባው ተጠናቋል!*\n\nእንኳን ደህና መጡ! መለያዎ ተረጋግጧል።\nየኪስ ቦርሳዎን ለማስተዳደር ከታች ያለውን ምናሌ ይጠቀሙ።",
@@ -302,16 +306,20 @@ def registration_markup(lang: str) -> ReplyKeyboardMarkup:
 
 def main_menu_markup(lang: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton(STRINGS[lang]["play_btn"], web_app=WebAppInfo(url=MINI_APP_URL))
+    kb.row(
+        InlineKeyboardButton(STRINGS[lang].get("play_btn", "🎮 PLAY CHELA BINGO"), web_app=WebAppInfo(url=MINI_APP_URL))
     )
-    kb.add(
-        InlineKeyboardButton(STRINGS[lang]["dep_btn"],  callback_data="action_deposit"),
-        InlineKeyboardButton(STRINGS[lang]["with_btn"], callback_data="action_withdraw")
+    kb.row(
+        InlineKeyboardButton(STRINGS[lang].get("dep_btn", "Deposit ➕"),  callback_data="action_deposit"),
+        InlineKeyboardButton(STRINGS[lang].get("with_btn", "Withdraw ➖"), callback_data="action_withdraw")
     )
-    kb.add(
-        InlineKeyboardButton(STRINGS[lang]["bal_btn"], callback_data="action_balance"),
-        InlineKeyboardButton(STRINGS[lang]["lang_btn"], callback_data="action_change_lang")
+    kb.row(
+        InlineKeyboardButton(STRINGS[lang].get("bal_btn", "💰 My Balance"), callback_data="action_balance"),
+        InlineKeyboardButton(STRINGS[lang].get("lang_btn", "🌐 Language / ቋንቋ"), callback_data="action_change_lang")
+    )
+    kb.row(
+        InlineKeyboardButton(STRINGS[lang].get("inv_btn", "🎁 Invite Friends"), callback_data="action_invite"),
+        InlineKeyboardButton(STRINGS[lang].get("sup_btn", "🎧 Support"), callback_data="action_support")
     )
     return kb
 
@@ -423,7 +431,7 @@ def cmd_start(message):
 
     def get_welcome_markup(lang):
         kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("🎮 አሁን ይጫወቱ (Play Now)", url="https://t.me/chelabingobot"))
+        kb.add(InlineKeyboardButton("🎮 አሁን ይጫወቱ (Play Now)", web_app=WebAppInfo(url=MINI_APP_URL)))
         return kb
 
     lang = get_lang(chat_id)
@@ -433,7 +441,7 @@ def cmd_start(message):
         try:
             bot.send_photo(chat_id, open(banner_path, 'rb'), 
                            caption=STRINGS[lang]["welcome_back"], 
-                           reply_markup=get_welcome_markup(lang))
+                           reply_markup=main_menu_markup(lang))
         except:
             bot.send_message(chat_id, STRINGS[lang]["welcome_back"], reply_markup=main_menu_markup(lang))
     else:
@@ -449,7 +457,7 @@ def cmd_play(message):
     
     chat_id = message.chat.id
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("🎮 አሁን ይጫወቱ (Play Now)", url="https://t.me/chelabingobot"))
+    kb.add(InlineKeyboardButton("🎮 አሁን ይጫወቱ (Play Now)", web_app=WebAppInfo(url=MINI_APP_URL)))
     
     welcome_text = (
         "🎰 *እንኳን ወደ Chela Bingo በደህና መጡ!* 🎉\n\n"
@@ -570,7 +578,7 @@ def cmd_send_manual_banner(message):
 
     try:
         kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("🎮 አሁን ይጫወቱ (Play Now)", url="https://t.me/chelabingobot"))
+        kb.add(InlineKeyboardButton("🎮 አሁን ይጫወቱ (Play Now)", web_app=WebAppInfo(url=MINI_APP_URL)))
         
         welcome_text = (
             "🎰 *እንኳን ወደ Chela Bingo በደህና መጡ!* 🎉\n\n"
@@ -653,10 +661,19 @@ def handle_callback(call):
         bot.answer_callback_query(call.id)
         selected_lang = data.split("|")[1]
         set_lang(chat_id, selected_lang)
+        
         if _is_user_registered(call.from_user.id):
             bot.send_message(chat_id, STRINGS[selected_lang]["welcome_back"], reply_markup=main_menu_markup(selected_lang))
         else:
-            bot.send_message(chat_id, STRINGS[selected_lang]["welcome_new"], reply_markup=registration_markup(selected_lang))
+            try:
+                bot.send_photo(
+                    chat_id, 
+                    open('reg_banner.jpg', 'rb'), 
+                    caption=STRINGS[selected_lang]["welcome_new"], 
+                    reply_markup=registration_markup(selected_lang)
+                )
+            except Exception:
+                bot.send_message(chat_id, STRINGS[selected_lang]["welcome_new"], reply_markup=registration_markup(selected_lang))
 
     elif data == "action_change_lang":
         bot.answer_callback_query(call.id)
@@ -695,6 +712,35 @@ def handle_callback(call):
         bot.answer_callback_query(call.id)
         set_state(chat_id, STATE_AWAITING_WITHDRAW)
         bot.send_message(chat_id, STRINGS[lang]["enter_with_amount"], reply_markup=cancel_reply_keyboard(lang))
+        
+    elif data == "action_invite":
+        bot.answer_callback_query(call.id)
+        ref_link = f"https://t.me/ChelaBingoBot?start=REF_{call.from_user.id}"
+        invite_text = (
+            "💥 *ልዩ የቼላ ቢንጎ ቅናሽ!* 💥🤝🤑\n"
+            "እንኳን ደህና መጡ ወደ አዲሱ እና ትልቁ የጋባዥነት ፕሮግራማችን! 👑✨\n"
+            "💸 *5 ጓደኞችን ይጋብዙ፣ ወዲያውኑ 50 ETB ይውሰዱ!* 💸💎\n\n"
+            "ይህ ለተወሰነ ጊዜ ብቻ የሚቆይ ነው፣ አሁኑኑ ተጠቀሙበት።\n"
+            "5 ሰዎች ሲመዘገቡ ወዲያውኑ 50 ETB የቼላ ቢንጎ አካውንት ላይ ይጨመራል።\n\n"
+            "በተጨማሪም የጨላ ቢንጎ አባላት የሚከተሉትን ጥቅሞች ያገኛሉ፡\n"
+            "🏆 ዕለታዊ ሽልማቶች\n"
+            "🎰 የጨዋታ አማራጮች\n"
+            "🤝 የማህበረሰብ ውይይት\n\n"
+            "ይህንን ልዩ ዕድል አያምልጥዎ! ⏳\n"
+            "🚀 አሁኑኑ ያጋሩ እና ማሸነፍ ይጀምሩ! 🥳💸\n\n"
+            f"🔗 *የመጋበዣ ሊንክዎ:*\n`{ref_link}`"
+        )
+        share_url = f"https://t.me/share/url?url={ref_link}&text=Play%20Chela%20Bingo%20and%20win!"
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("🔗 አሁኑኑ ያጋሩ (Share Now)", url=share_url))
+        try:
+            bot.send_photo(chat_id, open('invite_banner.jpg', 'rb'), caption=invite_text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            bot.send_message(chat_id, invite_text, reply_markup=kb, parse_mode="Markdown")
+            
+    elif data == "action_support":
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, STRINGS[lang]["support_msg"])
 
     else:
         bot.answer_callback_query(call.id)
@@ -723,11 +769,18 @@ def handle_text(message):
         bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
         return
 
+    # 🚀 X-RAY VERIFICATION ENGINE
     if state == STATE_AWAITING_TXN_SMS:
         set_state(chat_id, STATE_IDLE)
+        
         extracted_id = _extract_transaction_id(text)
+        
         if not extracted_id:
-            bot.send_message(chat_id, "❌ *Invalid Text Format:*\nWe could not find a valid Transaction ID in your message. Please make sure you copy and paste the *entire* SMS from the bank.", reply_markup=remove_keyboard())
+            bot.send_message(
+                chat_id, 
+                "❌ *Invalid Text Format:*\nWe could not find a valid Transaction ID in your message. Please make sure you copy and paste the *entire* SMS from the bank.", 
+                reply_markup=remove_keyboard()
+            )
             bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
             return
             
@@ -743,10 +796,15 @@ def handle_text(message):
         wait_msg = bot.send_message(chat_id, STRINGS[lang]["checking_api"])
         url = "https://verifyapi.leulzenebe.pro/verify"
         payload = {"reference": clean_txn_id}
-        headers = {"x-api-key": VERIFIER_API_KEY, "Content-Type": "application/json", "Accept": "application/json"}
+        headers = {
+            "x-api-key": VERIFIER_API_KEY,
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
 
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=20)
+            
             if response.status_code != 200:
                 _release_transaction(clean_txn_id)
                 bot.delete_message(chat_id, wait_msg.message_id)
@@ -770,6 +828,7 @@ def handle_text(message):
             settled_amt_raw = str(payload_data.get("settledAmount", "0"))
             amt_match = re.search(r"[\d\.]+", settled_amt_raw.replace(',', ''))
             verified_amount = float(amt_match.group(0)) if amt_match else 0.0
+            
             receiver_name = str(payload_data.get("creditedPartyName", "")).upper()
             receiver_account = str(payload_data.get("creditedPartyAccountNo", ""))
 
@@ -778,6 +837,7 @@ def handle_text(message):
                 if valid_name in receiver_name:
                     is_valid_destination = True
                     break
+            
             if not is_valid_destination:
                 for valid_account in VALID_MERCHANT_ACCOUNTS:
                     if valid_account[-4:] in receiver_account:
@@ -794,13 +854,23 @@ def handle_text(message):
             if verified_amount >= expected_amount and verified_amount > 0:
                 real_bal, promo_bal, total_bal = _get_user_wallet(message.from_user.id)
                 new_balance = real_bal + verified_amount
+                
                 if _supabase is not None:
                     _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
-                    _supabase.table("transactions").insert({"user_id": str(message.from_user.id), "amount": verified_amount, "tx_type": "deposit", "status": "completed"}).execute()
+                    _supabase.table("transactions").insert({
+                        "user_id": str(message.from_user.id),
+                        "amount": verified_amount,
+                        "tx_type": "deposit",
+                        "status": "completed"
+                    }).execute()
+
                 bot.delete_message(chat_id, wait_msg.message_id)
                 bot.send_message(chat_id, STRINGS[lang]["api_success"].format(verified_amount), reply_markup=remove_keyboard())
-                try: bot.send_message(ADMIN_IDS[0], f"🟢 *AUTOMATED DEPOSIT SUCCESS*\nUser ID: `{message.from_user.id}`\nRef: `{clean_txn_id}`\nCredited: `{verified_amount} ETB`")
-                except Exception: pass
+                
+                try:
+                    bot.send_message(ADMIN_IDS[0], f"🟢 *AUTOMATED DEPOSIT SUCCESS*\nUser ID: `{message.from_user.id}`\nRef: `{clean_txn_id}`\nCredited: `{verified_amount} ETB`")
+                except Exception:
+                    pass
             else:
                 _release_transaction(clean_txn_id)
                 bot.delete_message(chat_id, wait_msg.message_id)
@@ -810,12 +880,13 @@ def handle_text(message):
             _release_transaction(clean_txn_id)
             bot.delete_message(chat_id, wait_msg.message_id)
             bot.send_message(chat_id, STRINGS[lang]["api_error"], reply_markup=remove_keyboard())
-        except Exception:
+        except Exception as e:
             _release_transaction(clean_txn_id)
             if 'wait_msg' in locals():
                 try: bot.delete_message(chat_id, wait_msg.message_id)
                 except Exception: pass
             bot.send_message(chat_id, STRINGS[lang]["api_error"], reply_markup=remove_keyboard())
+
         bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
         return
 
@@ -823,7 +894,8 @@ def handle_text(message):
         try:
             clean_text_amount = text.replace(',', '')
             amount = float(clean_text_amount)
-            if amount <= 0: raise ValueError
+            if amount <= 0:
+                raise ValueError
         except ValueError:
             bot.send_message(chat_id, STRINGS[lang]["invalid_amount"])
             return
@@ -832,10 +904,14 @@ def handle_text(message):
             if amount < 50:
                 bot.send_message(chat_id, STRINGS[lang]["min_dep_err"])
                 return
-            if chat_id not in user_deposit_data: user_deposit_data[chat_id] = {"provider": "telebirr"}
+                
+            if chat_id not in user_deposit_data:
+                user_deposit_data[chat_id] = {"provider": "telebirr"}
+            
             user_deposit_data[chat_id]["amount"] = amount
             provider = user_deposit_data[chat_id]["provider"]
             set_state(chat_id, STATE_AWAITING_TXN_SMS)
+            
             inst_txt = STRINGS[lang][f"inst_{provider}"].format(amount)
             bot.send_message(chat_id, inst_txt, reply_markup=cancel_reply_keyboard(lang), parse_mode="HTML")
 
@@ -843,16 +919,26 @@ def handle_text(message):
             if amount < 100:
                 bot.send_message(chat_id, STRINGS[lang]["min_with_err"])
                 return
+                
             real_bal, promo_bal, total_bal = _get_user_wallet(message.from_user.id)
             set_state(chat_id, STATE_IDLE)
+            
             if amount > real_bal:
                 bot.send_message(chat_id, STRINGS[lang]["promo_locked_err"].format(real_bal, promo_bal), reply_markup=remove_keyboard())
             else:
                 if _supabase is not None:
                     new_balance = real_bal - amount
                     _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
-                    _supabase.table("transactions").insert({"user_id": str(message.from_user.id), "amount": amount, "tx_type": "withdrawal", "status": "pending"}).execute()
+                    
+                    _supabase.table("transactions").insert({
+                        "user_id": str(message.from_user.id),
+                        "amount": amount,
+                        "tx_type": "withdrawal",
+                        "status": "pending"
+                    }).execute()
+
                 bot.send_message(chat_id, STRINGS[lang]["with_submitted"].format(amount), reply_markup=remove_keyboard())
+
             bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
         return
 
@@ -864,32 +950,46 @@ def handle_text(message):
 # ---------------------------------------------------------------------------
 @bot.message_handler(commands=["credit"])
 def cmd_credit(message):
-    if not is_admin(message): return
     admin_id = message.from_user.id
     chat_id  = message.chat.id
+
+    if not is_admin(message):
+        return
+
     parts = message.text.strip().split()
     if len(parts) < 2:
         bot.send_message(chat_id, "⚠️ *Usage:* `/credit <amount> [target_tg_id]`")
         return
+
     try:
         amount = float(parts[1])
     except ValueError:
         bot.send_message(chat_id, "⚠️ Invalid amount.")
         return
+
     target_tg_id = admin_id
     if len(parts) >= 3:
-        try: target_tg_id = int(parts[2])
+        try:
+            target_tg_id = int(parts[2])
         except ValueError:
             bot.send_message(chat_id, "⚠️ Invalid target ID.")
             return
-    if _supabase is None: return
+
+    if _supabase is None:
+        return
+
     try:
         real_bal, promo_bal, total_bal = _get_user_wallet(target_tg_id)
         new_bal = real_bal + amount
         _supabase.table("tg_users").update({"balance": new_bal}).eq("tg_id", target_tg_id).execute()
+
         bot.send_message(chat_id, f"✅ *Credited {amount:.2f} ETB* to `{target_tg_id}`.\n\n💰 *New Real Balance:* `{new_bal:.2f} ETB`")
-        try: bot.send_message(target_tg_id, f"🎉 *Deposit Successful!*\n\nYour account has been credited with `{amount:.2f} ETB`.")
-        except Exception: pass
+        
+        try:
+            bot.send_message(target_tg_id, f"🎉 *Deposit Successful!*\n\nYour account has been credited with `{amount:.2f} ETB`.")
+        except Exception:
+            pass
+        
     except Exception as e:
         bot.send_message(chat_id, f"❌ *Credit failed.*\n\nError: `{str(e)[:200]}`")
 
