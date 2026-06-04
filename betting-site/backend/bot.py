@@ -44,8 +44,8 @@ VALID_MERCHANT_NAMES = [
 ]
 
 VALID_MERCHANT_ACCOUNTS = [
-    "0966617175",
-    "0723191843"
+    "0966617175",       # Telebirr (Bereket)
+    "0723191843"        # M-Pesa (Bereket)
 ]
 
 # ---------------------------------------------------------------------------
@@ -55,13 +55,13 @@ ADMIN_IDS = [5681654051]
 
 def is_admin(message) -> bool:
     # 1. Checks if it's your personal ID
-    if message.from_user.id in ADMIN_IDS:
+    if getattr(message, 'from_user', None) and message.from_user.id in ADMIN_IDS:
         return True
     # 2. Checks if you are sending anonymously as the Group/Channel
-    if message.sender_chat and message.sender_chat.id == message.chat.id:
+    if getattr(message, 'sender_chat', None) and message.sender_chat.id == message.chat.id:
         return True
     # 3. Checks for Telegram's universal "Anonymous Admin" ID
-    if message.from_user.id == 1087968824:
+    if getattr(message, 'from_user', None) and message.from_user.id == 1087968824:
         return True
     return False
 
@@ -80,18 +80,20 @@ if SUPABASE_URL and SUPABASE_SERVICE_KEY:
         print(f"--- ERROR creating Supabase client: {e} ---")
         _supabase = None
 
-def _get_user_wallet(tg_id: int) -> tuple[float, float]:
+# 🚀 UPGRADED: Fetches Real, Promo, and the Generated Total Balance safely
+def _get_user_wallet(tg_id: int) -> tuple[float, float, float]:
     if _supabase is None:
-        return 0.00, 0.00
+        return 0.00, 0.00, 0.00
     try:
-        result = _supabase.table("tg_users").select("balance, promo_balance").eq("tg_id", tg_id).maybe_single().execute()
+        result = _supabase.table("tg_users").select("balance, promo_balance, total_balance").eq("tg_id", tg_id).maybe_single().execute()
         if result.data:
-            total = float(result.data.get("balance") or 0.00)
+            real = float(result.data.get("balance") or 0.00)
             promo = float(result.data.get("promo_balance") or 0.00)
-            return total, promo
+            total = float(result.data.get("total_balance") or (real + promo))
+            return real, promo, total
     except Exception as e:
         print(f"[wallet lookup error] {e}")
-    return 0.00, 0.00
+    return 0.00, 0.00, 0.00
 
 def _is_user_registered(tg_id: int) -> bool:
     if _supabase is None:
@@ -135,7 +137,7 @@ def _start_tunnel(port: int = 3000) -> str:
     _tunnel_proc = subprocess.Popen(["npx", "localtunnel", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
     url = None
     for line in _tunnel_proc.stdout:
-        match = re.search(r"your url is:\s*(https://S+)", line)
+        match = re.search(r"your url is:\s*(https://\S+)", line)
         if match:
             url = match.group(1).strip()
             break
@@ -336,7 +338,7 @@ def quick_amount_markup() -> InlineKeyboardMarkup:
     kb.add(
         InlineKeyboardButton("500 ETB", callback_data="dep_amt|500"),
         InlineKeyboardButton("1000 ETB", callback_data="dep_amt|1000"),
-        KeyboardButton("2000 ETB", callback_data="dep_amt|2000")
+        InlineKeyboardButton("2000 ETB", callback_data="dep_amt|2000")
     )
     return kb
 
@@ -504,7 +506,6 @@ def cmd_invite(message):
     except Exception:
         bot.send_message(chat_id, invite_text, reply_markup=kb, parse_mode="Markdown")
 
-
 @bot.message_handler(commands=["support"])
 def cmd_support(message):
     if not can_execute_command(message, allow_group_admin=False): return
@@ -519,9 +520,8 @@ def cmd_balance(message):
     
     chat_id = message.chat.id
     lang = get_lang(chat_id)
-    total_bal, promo_bal = _get_user_wallet(message.from_user.id)
-    withdrawable = total_bal - promo_bal
-    bot.send_message(chat_id, STRINGS[lang]["curr_bal"].format(total_bal, withdrawable, promo_bal))
+    real_bal, promo_bal, total_bal = _get_user_wallet(message.from_user.id)
+    bot.send_message(chat_id, STRINGS[lang]["curr_bal"].format(total_bal, real_bal, promo_bal))
     bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
 
 @bot.message_handler(commands=["deposit"])
@@ -664,9 +664,8 @@ def handle_callback(call):
 
     elif data == "action_balance":
         bot.answer_callback_query(call.id)
-        total_bal, promo_bal = _get_user_wallet(call.from_user.id)
-        withdrawable = total_bal - promo_bal
-        bot.send_message(chat_id, STRINGS[lang]["curr_bal"].format(total_bal, withdrawable, promo_bal))
+        real_bal, promo_bal, total_bal = _get_user_wallet(call.from_user.id)
+        bot.send_message(chat_id, STRINGS[lang]["curr_bal"].format(total_bal, real_bal, promo_bal))
         bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
 
     elif data == "action_deposit":
@@ -793,8 +792,8 @@ def handle_text(message):
                 return
 
             if verified_amount >= expected_amount and verified_amount > 0:
-                total_bal, promo_bal = _get_user_wallet(message.from_user.id)
-                new_balance = total_bal + verified_amount
+                real_bal, promo_bal, total_bal = _get_user_wallet(message.from_user.id)
+                new_balance = real_bal + verified_amount
                 if _supabase is not None:
                     _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
                     _supabase.table("transactions").insert({"user_id": str(message.from_user.id), "amount": verified_amount, "tx_type": "deposit", "status": "completed"}).execute()
@@ -844,14 +843,13 @@ def handle_text(message):
             if amount < 100:
                 bot.send_message(chat_id, STRINGS[lang]["min_with_err"])
                 return
-            total_bal, promo_bal = _get_user_wallet(message.from_user.id)
-            withdrawable = total_bal - promo_bal
+            real_bal, promo_bal, total_bal = _get_user_wallet(message.from_user.id)
             set_state(chat_id, STATE_IDLE)
-            if amount > withdrawable:
-                bot.send_message(chat_id, STRINGS[lang]["promo_locked_err"].format(withdrawable, promo_bal), reply_markup=remove_keyboard())
+            if amount > real_bal:
+                bot.send_message(chat_id, STRINGS[lang]["promo_locked_err"].format(real_bal, promo_bal), reply_markup=remove_keyboard())
             else:
                 if _supabase is not None:
-                    new_balance = total_bal - amount
+                    new_balance = real_bal - amount
                     _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
                     _supabase.table("transactions").insert({"user_id": str(message.from_user.id), "amount": amount, "tx_type": "withdrawal", "status": "pending"}).execute()
                 bot.send_message(chat_id, STRINGS[lang]["with_submitted"].format(amount), reply_markup=remove_keyboard())
@@ -886,10 +884,10 @@ def cmd_credit(message):
             return
     if _supabase is None: return
     try:
-        total_bal, promo_bal = _get_user_wallet(target_tg_id)
-        new_bal = total_bal + amount
+        real_bal, promo_bal, total_bal = _get_user_wallet(target_tg_id)
+        new_bal = real_bal + amount
         _supabase.table("tg_users").update({"balance": new_bal}).eq("tg_id", target_tg_id).execute()
-        bot.send_message(chat_id, f"✅ *Credited {amount:.2f} ETB* to `{target_tg_id}`.\n\n💰 *New balance:* `{new_bal:.2f} ETB`")
+        bot.send_message(chat_id, f"✅ *Credited {amount:.2f} ETB* to `{target_tg_id}`.\n\n💰 *New Real Balance:* `{new_bal:.2f} ETB`")
         try: bot.send_message(target_tg_id, f"🎉 *Deposit Successful!*\n\nYour account has been credited with `{amount:.2f} ETB`.")
         except Exception: pass
     except Exception as e:
