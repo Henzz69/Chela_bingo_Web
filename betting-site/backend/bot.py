@@ -135,7 +135,7 @@ def _start_tunnel(port: int = 3000) -> str:
     _tunnel_proc = subprocess.Popen(["npx", "localtunnel", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
     url = None
     for line in _tunnel_proc.stdout:
-        match = re.search(r"your url is:\s*(https://\S+)", line)
+        match = re.search(r"your url is:\s*(https://S+)", line)
         if match:
             url = match.group(1).strip()
             break
@@ -336,7 +336,7 @@ def quick_amount_markup() -> InlineKeyboardMarkup:
     kb.add(
         InlineKeyboardButton("500 ETB", callback_data="dep_amt|500"),
         InlineKeyboardButton("1000 ETB", callback_data="dep_amt|1000"),
-        InlineKeyboardButton("2000 ETB", callback_data="dep_amt|2000")
+        KeyboardButton("2000 ETB", callback_data="dep_amt|2000")
     )
     return kb
 
@@ -472,8 +472,38 @@ def cmd_invite(message):
     if not can_execute_command(message, allow_group_admin=False): return
     
     chat_id = message.chat.id
-    lang = get_lang(chat_id)
-    bot.send_message(chat_id, STRINGS[lang]["invite_msg"].format(message.from_user.id))
+    ref_link = f"https://t.me/ChelaBingoBot?start=REF_{message.from_user.id}"
+    
+    invite_text = (
+        "💥 *ልዩ የቼላ ቢንጎ ቅናሽ!* 💥🤝🤑\n"
+        "እንኳን ደህና መጡ ወደ አዲሱ እና ትልቁ የጋባዥነት ፕሮግራማችን! 👑✨\n"
+        "💸 *5 ጓደኞችን ይጋብዙ፣ ወዲያውኑ 50 ETB ይውሰዱ!* 💸💎\n\n"
+        "ይህ ለተወሰነ ጊዜ ብቻ የሚቆይ ነው፣ አሁኑኑ ተጠቀሙበት።\n"
+        "5 ሰዎች ሲመዘገቡ ወዲያውኑ 50 ETB የቼላ ቢንጎ አካውንት ላይ ይጨመራል።\n\n"
+        "በተጨማሪም የጨላ ቢንጎ አባላት የሚከተሉትን ጥቅሞች ያገኛሉ፡\n"
+        "🏆 ዕለታዊ ሽልማቶች\n"
+        "🎰 የጨዋታ አማራጮች\n"
+        "🤝 የማህበረሰብ ውይይት\n\n"
+        "ይህንን ልዩ ዕድል አያምልጥዎ! ⏳\n"
+        "🚀 አሁኑኑ ያጋሩ እና ማሸነፍ ይጀምሩ! 🥳💸\n\n"
+        f"🔗 *የመጋበዣ ሊንክዎ:*\n`{ref_link}`"
+    )
+    
+    kb = InlineKeyboardMarkup()
+    share_url = f"https://t.me/share/url?url={ref_link}&text=Play%20Chela%20Bingo%20and%20win!"
+    kb.add(InlineKeyboardButton("🔗 አሁኑኑ ያጋሩ (Share Now)", url=share_url))
+    
+    try:
+        bot.send_photo(
+            chat_id, 
+            open('invite_banner.jpg', 'rb'), 
+            caption=invite_text, 
+            reply_markup=kb,
+            parse_mode="Markdown"
+        )
+    except Exception:
+        bot.send_message(chat_id, invite_text, reply_markup=kb, parse_mode="Markdown")
+
 
 @bot.message_handler(commands=["support"])
 def cmd_support(message):
