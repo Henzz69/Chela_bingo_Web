@@ -423,10 +423,38 @@ def cmd_play(message):
     kb.add(InlineKeyboardButton("🎮 አሁን ይጫወቱ (Play Now)", url="https://t.me/chelabingobot"))
     try:
         bot.send_photo(chat_id, open('banner.jpg', 'rb'), 
-                       caption="🎰 *Ready to play?* Click below to launch:", 
+                       caption="🎰 *እንኳን ወደ Chela Bingo በደህና መጡ! 🎉
+
+በዚህ ግሩፕ ውስጥ አዝናኝ የቢንጎ ጨዋታዎችን፣ ዕለታዊ ጃክፖቶችን እና አዳዲስ የጨዋታ መረጃዎችን ያገኛሉ! 💸✨
+
+🎰 ምን ይጠብቆታል?
+
+🔹 ዕለታዊ ጃክፖቶች 💰
+
+🔹 የተለያዩ የጨዋታ አማራጮች 🎯
+
+🔹 ልዩ እና አዝናኝ የቢንጎ ቅጦች ✨
+
+ለመጫወት እና ለማሸነፍ ዝግጁ ነዎት? አሁኑኑ ይጀምሩ! መልካም ዕድል! 🍀
+
+📍 አብረውን ስለሆኑ እናመሰግናለን!", 
                        reply_markup=kb)
     except:
-        bot.send_message(chat_id, "🎰 *Ready to play?* Click below to launch:", reply_markup=kb)
+        bot.send_message(chat_id, "🎰 እንኳን ወደ Chela Bingo በደህና መጡ! 🎉
+
+በዚህ ግሩፕ ውስጥ አዝናኝ የቢንጎ ጨዋታዎችን፣ ዕለታዊ ጃክፖቶችን እና አዳዲስ የጨዋታ መረጃዎችን ያገኛሉ! 💸✨
+
+🎰 ምን ይጠብቆታል?
+
+🔹 ዕለታዊ ጃክፖቶች 💰
+
+🔹 የተለያዩ የጨዋታ አማራጮች 🎯
+
+🔹 ልዩ እና አዝናኝ የቢንጎ ቅጦች ✨
+
+ለመጫወት እና ለማሸነፍ ዝግጁ ነዎት? አሁኑኑ ይጀምሩ! መልካም ዕድል! 🍀
+
+📍 አብረውን ስለሆኑ እናመሰግናለን!", reply_markup=kb)
 
 @bot.message_handler(commands=["invite"])
 def cmd_invite(message):
