@@ -53,8 +53,17 @@ VALID_MERCHANT_ACCOUNTS = [
 # ---------------------------------------------------------------------------
 ADMIN_IDS = [5681654051]
 
-def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS
+def is_admin(message) -> bool:
+    # 1. Checks if it's your personal ID
+    if message.from_user.id in ADMIN_IDS:
+        return True
+    # 2. Checks if you are sending anonymously as the Group/Channel
+    if message.sender_chat and message.sender_chat.id == message.chat.id:
+        return True
+    # 3. Checks for Telegram's universal "Anonymous Admin" ID
+    if message.from_user.id == 1087968824:
+        return True
+    return False
 
 if not BOT_TOKEN or BOT_TOKEN == "your_bot_token_here":
     raise RuntimeError("TELEGRAM_BOT_TOKEN is not set in .env")
@@ -126,7 +135,7 @@ def _start_tunnel(port: int = 3000) -> str:
     _tunnel_proc = subprocess.Popen(["npx", "localtunnel", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
     url = None
     for line in _tunnel_proc.stdout:
-        match = re.search(r"your url is:\s*(https://S+)", line)
+        match = re.search(r"your url is:\s*(https://\S+)", line)
         if match:
             url = match.group(1).strip()
             break
@@ -188,7 +197,7 @@ def set_lang(chat_id: int, lang: str) -> None:
 def can_execute_command(message, allow_group_admin=False) -> bool:
     """Safely routes commands. Deletes public spam from regular users entirely."""
     if message.chat.type != "private":
-        if allow_group_admin and is_admin(message.from_user.id):
+        if allow_group_admin and is_admin(message):
             return True
         try:
             bot.delete_message(message.chat.id, message.message_id)
@@ -504,7 +513,7 @@ def cmd_withdraw(message):
 
 @bot.message_handler(commands=["testsms"])
 def cmd_testsms(message):
-    if not is_admin(message.from_user.id):
+    if not is_admin(message):
         return
     
     raw_text = message.text.replace("/testsms", "").strip()
@@ -524,7 +533,7 @@ def cmd_testsms(message):
 # ---------------------------------------------------------------------------
 @bot.message_handler(commands=["send"])
 def cmd_send_manual_banner(message):
-    if not is_admin(message.from_user.id):
+    if not is_admin(message):
         try: bot.delete_message(message.chat.id, message.message_id)
         except Exception: pass
         return
@@ -669,7 +678,7 @@ def handle_text(message):
     # Public group text cleanup rules
     if message.chat.type != "private":
         # Delete typical members' chatter to ensure zero clutter, but allow your account to talk freely
-        if not is_admin(message.from_user.id):
+        if not is_admin(message):
             try: bot.delete_message(message.chat.id, message.message_id)
             except Exception: pass
         return
@@ -827,9 +836,9 @@ def handle_text(message):
 # ---------------------------------------------------------------------------
 @bot.message_handler(commands=["credit"])
 def cmd_credit(message):
+    if not is_admin(message): return
     admin_id = message.from_user.id
     chat_id  = message.chat.id
-    if not is_admin(admin_id): return
     parts = message.text.strip().split()
     if len(parts) < 2:
         bot.send_message(chat_id, "⚠️ *Usage:* `/credit <amount> [target_tg_id]`")
