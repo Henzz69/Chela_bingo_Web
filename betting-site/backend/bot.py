@@ -183,15 +183,13 @@ def set_lang(chat_id: int, lang: str) -> None:
     user_lang[chat_id] = lang
 
 # ---------------------------------------------------------------------------
-# HELPER: RESTRICT TO PRIVATE CHATS WITH ADMIN BYPASS
+# ROUTING CHECKER FOR CHATS & COMMAND MODULES
 # ---------------------------------------------------------------------------
-def enforce_private_chat(message) -> bool:
-    """Returns True if private or if user is admin, otherwise deletes the group message and returns False."""
+def can_execute_command(message, allow_group_admin=False) -> bool:
+    """Safely routes commands. Deletes public spam from regular users entirely."""
     if message.chat.type != "private":
-        # Allow admins to bypass the group restriction
-        if is_admin(message.from_user.id):
+        if allow_group_admin and is_admin(message.from_user.id):
             return True
-            
         try:
             bot.delete_message(message.chat.id, message.message_id)
         except Exception:
@@ -398,7 +396,7 @@ def _extract_transaction_id(text: str):
 # ---------------------------------------------------------------------------
 @bot.message_handler(commands=["start"])
 def cmd_start(message):
-    if not enforce_private_chat(message): return
+    if not can_execute_command(message, allow_group_admin=False): return
     
     chat_id = message.chat.id
     set_state(chat_id, STATE_IDLE)
@@ -436,10 +434,9 @@ def cmd_start(message):
 
 @bot.message_handler(commands=["play"])
 def cmd_play(message):
-    if not enforce_private_chat(message): return
+    if not can_execute_command(message, allow_group_admin=True): return
     
     chat_id = message.chat.id
-    lang = get_lang(chat_id)
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("🎮 አሁን ይጫወቱ (Play Now)", url="https://t.me/chelabingobot"))
     
@@ -463,7 +460,7 @@ def cmd_play(message):
 
 @bot.message_handler(commands=["invite"])
 def cmd_invite(message):
-    if not enforce_private_chat(message): return
+    if not can_execute_command(message, allow_group_admin=False): return
     
     chat_id = message.chat.id
     lang = get_lang(chat_id)
@@ -471,7 +468,7 @@ def cmd_invite(message):
 
 @bot.message_handler(commands=["support"])
 def cmd_support(message):
-    if not enforce_private_chat(message): return
+    if not can_execute_command(message, allow_group_admin=False): return
     
     chat_id = message.chat.id
     lang = get_lang(chat_id)
@@ -479,7 +476,7 @@ def cmd_support(message):
 
 @bot.message_handler(commands=["balance"])
 def cmd_balance(message):
-    if not enforce_private_chat(message): return
+    if not can_execute_command(message, allow_group_admin=False): return
     
     chat_id = message.chat.id
     lang = get_lang(chat_id)
@@ -490,7 +487,7 @@ def cmd_balance(message):
 
 @bot.message_handler(commands=["deposit"])
 def cmd_deposit(message):
-    if not enforce_private_chat(message): return
+    if not can_execute_command(message, allow_group_admin=False): return
     
     chat_id = message.chat.id
     lang = get_lang(chat_id)
@@ -498,7 +495,7 @@ def cmd_deposit(message):
 
 @bot.message_handler(commands=["withdraw"])
 def cmd_withdraw(message):
-    if not enforce_private_chat(message): return
+    if not can_execute_command(message, allow_group_admin=False): return
     
     chat_id = message.chat.id
     lang = get_lang(chat_id)
@@ -528,6 +525,8 @@ def cmd_testsms(message):
 @bot.message_handler(commands=["send"])
 def cmd_send_manual_banner(message):
     if not is_admin(message.from_user.id):
+        try: bot.delete_message(message.chat.id, message.message_id)
+        except Exception: pass
         return
 
     try:
@@ -560,7 +559,7 @@ def cmd_send_manual_banner(message):
 # ---------------------------------------------------------------------------
 @bot.message_handler(content_types=["contact"])
 def handle_contact(message):
-    if not enforce_private_chat(message): return
+    if not can_execute_command(message, allow_group_admin=False): return
     
     chat_id = message.chat.id
     contact = message.contact
@@ -667,8 +666,14 @@ def handle_callback(call):
 # ---------------------------------------------------------------------------
 @bot.message_handler(func=lambda m: m.content_type == "text" and not m.text.startswith("/"))
 def handle_text(message):
-    if not enforce_private_chat(message): return
-    
+    # Public group text cleanup rules
+    if message.chat.type != "private":
+        # Delete typical members' chatter to ensure zero clutter, but allow your account to talk freely
+        if not is_admin(message.from_user.id):
+            try: bot.delete_message(message.chat.id, message.message_id)
+            except Exception: pass
+        return
+
     chat_id = message.chat.id
     text    = message.text.strip()
     state   = get_state(chat_id)
