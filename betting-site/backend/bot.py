@@ -44,7 +44,7 @@ VALID_MERCHANT_NAMES = [
 ]
 
 VALID_MERCHANT_ACCOUNTS = [
-    "0966617175",       # Telebirr & CBE Birr (Bereket)
+    "0966617175",       # Telebirr (Bereket)
     "0723191843"        # M-Pesa (Bereket)
 ]
 
@@ -53,8 +53,17 @@ VALID_MERCHANT_ACCOUNTS = [
 # ---------------------------------------------------------------------------
 ADMIN_IDS = [5681654051]
 
-def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS
+def is_admin(message) -> bool:
+    # 1. Checks if it's your personal ID
+    if getattr(message, 'from_user', None) and message.from_user.id in ADMIN_IDS:
+        return True
+    # 2. Checks if you are sending anonymously as the Group/Channel
+    if getattr(message, 'sender_chat', None) and message.sender_chat.id == message.chat.id:
+        return True
+    # 3. Checks for Telegram's universal "Anonymous Admin" ID
+    if getattr(message, 'from_user', None) and message.from_user.id == 1087968824:
+        return True
+    return False
 
 if not BOT_TOKEN or BOT_TOKEN == "your_bot_token_here":
     raise RuntimeError("TELEGRAM_BOT_TOKEN is not set in .env")
@@ -71,19 +80,20 @@ if SUPABASE_URL and SUPABASE_SERVICE_KEY:
         print(f"--- ERROR creating Supabase client: {e} ---")
         _supabase = None
 
-# 🚀 UPGRADED: Now fetches both total balance and locked promo balance
-def _get_user_wallet(tg_id: int) -> tuple[float, float]:
+# 🚀 UPGRADED: Fetches Real, Promo, and the Generated Total Balance safely
+def _get_user_wallet(tg_id: int) -> tuple[float, float, float]:
     if _supabase is None:
-        return 0.00, 0.00
+        return 0.00, 0.00, 0.00
     try:
-        result = _supabase.table("tg_users").select("balance, promo_balance").eq("tg_id", tg_id).maybe_single().execute()
+        result = _supabase.table("tg_users").select("balance, promo_balance, total_balance").eq("tg_id", tg_id).maybe_single().execute()
         if result.data:
-            total = float(result.data.get("balance") or 0.00)
+            real = float(result.data.get("balance") or 0.00)
             promo = float(result.data.get("promo_balance") or 0.00)
-            return total, promo
+            total = float(result.data.get("total_balance") or (real + promo))
+            return real, promo, total
     except Exception as e:
         print(f"[wallet lookup error] {e}")
-    return 0.00, 0.00
+    return 0.00, 0.00, 0.00
 
 def _is_user_registered(tg_id: int) -> bool:
     if _supabase is None:
@@ -127,7 +137,7 @@ def _start_tunnel(port: int = 3000) -> str:
     _tunnel_proc = subprocess.Popen(["npx", "localtunnel", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
     url = None
     for line in _tunnel_proc.stdout:
-        match = re.search(r"your url is:\s*(https://S+)", line)
+        match = re.search(r"your url is:\s*(https://\S+)", line)
         if match:
             url = match.group(1).strip()
             break
@@ -164,7 +174,7 @@ except Exception:
 user_state: dict[int, str] = {}
 user_lang: dict[int, str] = {}  
 user_deposit_data: dict[int, dict] = {} 
-user_ref_data: dict[int, int] = {} # 🚀 NEW: Temporarily holds the referrer ID
+user_ref_data: dict[int, int] = {} 
 
 STATE_IDLE              = "IDLE"
 STATE_AWAITING_DEPOSIT  = "AWAITING_DEPOSIT"
@@ -182,6 +192,21 @@ def get_lang(chat_id: int) -> str:
 
 def set_lang(chat_id: int, lang: str) -> None:
     user_lang[chat_id] = lang
+
+# ---------------------------------------------------------------------------
+# ROUTING CHECKER FOR CHATS & COMMAND MODULES
+# ---------------------------------------------------------------------------
+def can_execute_command(message, allow_group_admin=False) -> bool:
+    """Safely routes commands. Deletes public spam from regular users entirely."""
+    if message.chat.type != "private":
+        if allow_group_admin and is_admin(message):
+            return True
+        try:
+            bot.delete_message(message.chat.id, message.message_id)
+        except Exception:
+            pass
+        return False
+    return True
 
 # ---------------------------------------------------------------------------
 # DICTIONARY FOR STRINGS (BILINGUAL)
@@ -220,7 +245,6 @@ STRINGS = {
         "support_msg": "🎧 *CHELA Bingo Support*\n\nNeed help with a deposit, withdrawal, or a game issue? Our team is here 24/7.\n\nContact us directly: @ChelaSupport",
         
         "inst_telebirr": "Telebirr Account\n\n<code>0966617175</code>\n\n<blockquote>\n\nCheck if the name is HENOK.\n\n1. Send {} ETB to the Telebirr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from Telebirr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the Telebirr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
-        "inst_cbe_birr": "CBE Birr Account\n\n<code>0919184337</code>\n\n<blockquote>1. Send {} ETB to the CBE Birr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from CBE Birr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the CBE Birr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
         "inst_mpesa": "M-Pesa Account\n\n<code>0723191843</code>\n\n<blockquote>1. Send {} ETB to the M-Pesa account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from M-Pesa containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the M-Pesa account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
     },
     "am": {
@@ -255,9 +279,8 @@ STRINGS = {
         "invite_msg": "🎁 *ጓደኞችዎን ይጋብዙ!*\n\nይህን ቦት ለጓደኞችዎ በማጋራት 5ቱ ሲመዘገቡና ክፍያ ሲፈፅሙ የ 50 ETB ፕሮሞ ቦነስ በራስ ሰር ያገኛሉ!\n\nየመጋበዣ ሊንክዎ:\n`https://t.me/ChelaBingoBot?start=REF_{}`",
         "support_msg": "🎧 *የቼላ ቢንጎ ድጋፍ ማዕከል*\n\nስለ ክፍያ፣ ገንዘብ ማውጣት ወይም ጨዋታ እርዳታ ይፈልጋሉ? ቡድናችን 24/7 ዝግጁ ነው።\n\nያነጋግሩን: @ChelaSupport",
         
-        "inst_telebirr": "የቴሌብር አካውንት\n\n<code>0966617175</code>\n\n<blockquote>1. Send {} ETB to the Telebirr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from Telebirr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the Telebirr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
-        "inst_cbe_birr": "የሲቢኢ ብር (CBE Birr) አካውንት\n\n<code>0919184337</code>\n\n<blockquote>1. Send {} ETB to the CBE Birr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from CBE Birr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the CBE Birr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
-        "inst_mpesa": "የኤም-ፔሳ (M-Pesa) አካውንት\n\n<code>0723191843</code>\n\n<blockquote>1. Send {} ETB to the M-Pesa account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from eye-pesa containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the M-Pesa account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
+        "inst_telebirr": "የቴሌብር አካውንት\n\n<code>0966617175</code>\n\n<blockquote>1. Send {} ETB to the Telebirr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from Telebirr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the Telebirr account provided above. If you send money to an agent other than the one provided, a 2 penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
+        "inst_mpesa": "የኤም-ፔሳ (M-Pesa) አካውንት\n\n<code>0723191843</code>\n\n<blockquote>1. Send {} ETB to the M-Pesa account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from M-Pesa containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the M-Pesa account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
     }
 }
 
@@ -301,9 +324,6 @@ def payment_methods_markup() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
         InlineKeyboardButton("Telebirr 📱", callback_data="dep_prov|telebirr"),
-        InlineKeyboardButton("CBE Birr 💵", callback_data="dep_prov|cbe_birr")
-    )
-    kb.add(
         InlineKeyboardButton("M-Pesa 💸", callback_data="dep_prov|mpesa")
     )
     return kb
@@ -324,6 +344,37 @@ def quick_amount_markup() -> InlineKeyboardMarkup:
 
 def remove_keyboard() -> ReplyKeyboardRemove:
     return ReplyKeyboardRemove()
+
+# ---------------------------------------------------------------------------
+# AUTOMATIC WELCOME LISTENER
+# ---------------------------------------------------------------------------
+@bot.message_handler(content_types=['new_chat_members'])
+def send_welcome_banner(message):
+    for new_user in message.new_chat_members:
+        if new_user.id != bot.get_me().id:
+            try:
+                kb = InlineKeyboardMarkup()
+                kb.add(InlineKeyboardButton("🎮 አሁን ይጫወቱ (Play Now)", url="https://t.me/chelabingobot"))
+                
+                welcome_text = (
+                    f"እንኳን ወደ Chela Bingo በደህና መጡ {new_user.first_name}! 🎉\n\n"
+                    "በዚህ ግሩፕ ውስጥ አዝናኝ የቢንጎ ጨዋታዎችን፣ ዕለታዊ ጃክፖቶችን እና አዳዲስ የጨዋታ መረጃዎችን ያገኛሉ! 💸✨\n\n"
+                    "🎰 ምን ይጠብቆታል?\n"
+                    "🔹 ዕለታዊ ጃክፖቶች 💰\n"
+                    "🔹 የተለያዩ የጨዋታ አማራጮች 🎯\n"
+                    "🔹 ልዩ እና አዝናኝ የቢንጎ ቅጦች ✨\n\n"
+                    "ለመጫወት እና ለማሸነፍ ዝግጁ ነዎት? አሁኑኑ ይጀምሩ! መልካም ዕድል! 🍀\n\n"
+                    "📍 አብረውን ስለሆኑ እናመሰግናለን!"
+                )
+                
+                bot.send_photo(
+                    message.chat.id, 
+                    open('banner.jpg', 'rb'), 
+                    caption=welcome_text,
+                    reply_markup=kb
+                )
+            except Exception as e:
+                print(f"Error sending welcome banner: {e}")
 
 # ---------------------------------------------------------------------------
 # REUSABLE TRANSACTION PARSER
@@ -356,27 +407,35 @@ def _extract_transaction_id(text: str):
 # ---------------------------------------------------------------------------
 @bot.message_handler(commands=["start"])
 def cmd_start(message):
+    if not can_execute_command(message, allow_group_admin=False): return
+    
     chat_id = message.chat.id
     set_state(chat_id, STATE_IDLE)
     
-    # 🚀 THE VIRAL INTERCEPTOR: Catch ?start=REF_ID deep links
     parts = message.text.split()
     if len(parts) > 1 and parts[1].startswith("REF_"):
         try:
             ref_id = int(parts[1].split("_")[1])
-            # Ensure they aren't referring themselves
             if ref_id != message.from_user.id:
                 user_ref_data[chat_id] = ref_id
         except Exception:
             pass
 
+    def get_welcome_markup(lang):
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("🎮 አሁን ይጫወቱ (Play Now)", url="https://t.me/chelabingobot"))
+        return kb
+
+    lang = get_lang(chat_id)
+    banner_path = 'banner.jpg' 
+
     if _is_user_registered(message.from_user.id):
-        lang = get_lang(chat_id)
-        bot.send_message(
-            chat_id, 
-            STRINGS[lang]["welcome_back"], 
-            reply_markup=main_menu_markup(lang)
-        )
+        try:
+            bot.send_photo(chat_id, open(banner_path, 'rb'), 
+                           caption=STRINGS[lang]["welcome_back"], 
+                           reply_markup=get_welcome_markup(lang))
+        except:
+            bot.send_message(chat_id, STRINGS[lang]["welcome_back"], reply_markup=main_menu_markup(lang))
     else:
         bot.send_message(
             chat_id,
@@ -386,41 +445,97 @@ def cmd_start(message):
 
 @bot.message_handler(commands=["play"])
 def cmd_play(message):
+    if not can_execute_command(message, allow_group_admin=True): return
+    
     chat_id = message.chat.id
-    lang = get_lang(chat_id)
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton(STRINGS[lang]["play_btn"], web_app=WebAppInfo(url=MINI_APP_URL)))
-    bot.send_message(chat_id, "🎰 *Ready to play?* Click below to launch:", reply_markup=kb)
+    kb.add(InlineKeyboardButton("🎮 አሁን ይጫወቱ (Play Now)", url="https://t.me/chelabingobot"))
+    
+    welcome_text = (
+        "🎰 *እንኳን ወደ Chela Bingo በደህና መጡ!* 🎉\n\n"
+        "በዚህ ግሩፕ ውስጥ አዝናኝ የቢንጎ ጨዋታዎችን፣ ዕለታዊ ጃክፖቶችን እና አዳዲስ የጨዋታ መረጃዎችን ያገኛሉ! 💸✨\n\n"
+        "🎰 ምን ይጠብቆታል?\n"
+        "🔹 ዕለታዊ ጃክፖቶች 💰\n"
+        "🔹 የተለያዩ የጨዋታ አማራጮች 🎯\n"
+        "🔹 ልዩ እና አዝናኝ የቢንጎ ቅጦች ✨\n\n"
+        "ለመጫወት እና ለማሸነፍ ዝግጁ ነዎት? አሁኑኑ ይጀምሩ! መልካም ዕድል! 🍀\n\n"
+        "📍 አብረውን ስለሆኑ እናመሰግናለን!"
+    )
+    
+    try:
+        bot.send_photo(chat_id, open('banner.jpg', 'rb'), 
+                       caption=welcome_text, 
+                       reply_markup=kb)
+    except:
+        bot.send_message(chat_id, welcome_text, reply_markup=kb)
 
 @bot.message_handler(commands=["invite"])
 def cmd_invite(message):
+    if not can_execute_command(message, allow_group_admin=False): return
+    
     chat_id = message.chat.id
-    lang = get_lang(chat_id)
-    bot.send_message(chat_id, STRINGS[lang]["invite_msg"].format(message.from_user.id))
+    ref_link = f"https://t.me/ChelaBingoBot?start=REF_{message.from_user.id}"
+    
+    invite_text = (
+        "💥 *ልዩ የቼላ ቢንጎ ቅናሽ!* 💥🤝🤑\n"
+        "እንኳን ደህና መጡ ወደ አዲሱ እና ትልቁ የጋባዥነት ፕሮግራማችን! 👑✨\n"
+        "💸 *5 ጓደኞችን ይጋብዙ፣ ወዲያውኑ 50 ETB ይውሰዱ!* 💸💎\n\n"
+        "ይህ ለተወሰነ ጊዜ ብቻ የሚቆይ ነው፣ አሁኑኑ ተጠቀሙበት።\n"
+        "5 ሰዎች ሲመዘገቡ ወዲያውኑ 50 ETB የቼላ ቢንጎ አካውንት ላይ ይጨመራል።\n\n"
+        "በተጨማሪም የጨላ ቢንጎ አባላት የሚከተሉትን ጥቅሞች ያገኛሉ፡\n"
+        "🏆 ዕለታዊ ሽልማቶች\n"
+        "🎰 የጨዋታ አማራጮች\n"
+        "🤝 የማህበረሰብ ውይይት\n\n"
+        "ይህንን ልዩ ዕድል አያምልጥዎ! ⏳\n"
+        "🚀 አሁኑኑ ያጋሩ እና ማሸነፍ ይጀምሩ! 🥳💸\n\n"
+        f"🔗 *የመጋበዣ ሊንክዎ:*\n`{ref_link}`"
+    )
+    
+    kb = InlineKeyboardMarkup()
+    share_url = f"https://t.me/share/url?url={ref_link}&text=Play%20Chela%20Bingo%20and%20win!"
+    kb.add(InlineKeyboardButton("🔗 አሁኑኑ ያጋሩ (Share Now)", url=share_url))
+    
+    try:
+        bot.send_photo(
+            chat_id, 
+            open('invite_banner.jpg', 'rb'), 
+            caption=invite_text, 
+            reply_markup=kb,
+            parse_mode="Markdown"
+        )
+    except Exception:
+        bot.send_message(chat_id, invite_text, reply_markup=kb, parse_mode="Markdown")
 
 @bot.message_handler(commands=["support"])
 def cmd_support(message):
+    if not can_execute_command(message, allow_group_admin=False): return
+    
     chat_id = message.chat.id
     lang = get_lang(chat_id)
     bot.send_message(chat_id, STRINGS[lang]["support_msg"])
 
 @bot.message_handler(commands=["balance"])
 def cmd_balance(message):
+    if not can_execute_command(message, allow_group_admin=False): return
+    
     chat_id = message.chat.id
     lang = get_lang(chat_id)
-    total_bal, promo_bal = _get_user_wallet(message.from_user.id)
-    withdrawable = total_bal - promo_bal
-    bot.send_message(chat_id, STRINGS[lang]["curr_bal"].format(total_bal, withdrawable, promo_bal))
+    real_bal, promo_bal, total_bal = _get_user_wallet(message.from_user.id)
+    bot.send_message(chat_id, STRINGS[lang]["curr_bal"].format(total_bal, real_bal, promo_bal))
     bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
 
 @bot.message_handler(commands=["deposit"])
 def cmd_deposit(message):
+    if not can_execute_command(message, allow_group_admin=False): return
+    
     chat_id = message.chat.id
     lang = get_lang(chat_id)
     bot.send_message(chat_id, STRINGS[lang]["choose_provider"], reply_markup=payment_methods_markup())
 
 @bot.message_handler(commands=["withdraw"])
 def cmd_withdraw(message):
+    if not can_execute_command(message, allow_group_admin=False): return
+    
     chat_id = message.chat.id
     lang = get_lang(chat_id)
     set_state(chat_id, STATE_AWAITING_WITHDRAW)
@@ -428,7 +543,7 @@ def cmd_withdraw(message):
 
 @bot.message_handler(commands=["testsms"])
 def cmd_testsms(message):
-    if not is_admin(message.from_user.id):
+    if not is_admin(message):
         return
     
     raw_text = message.text.replace("/testsms", "").strip()
@@ -441,13 +556,50 @@ def cmd_testsms(message):
     if extracted_id:
         bot.send_message(message.chat.id, f"✅ *SUCCESS!*\nThe bot strictly extracted: `{extracted_id}`")
     else:
-        bot.send_message(message.chat.id, f"❌ *FAILED!*\nThe bot could not find a valid alphanumeric transaction ID in that text. It would have safely rejected this.")
+        bot.send_message(message.chat.id, f"❌ *FAILED!*\nThe bot could not find a valid alphanumeric transaction ID in that text.")
+
+# ---------------------------------------------------------------------------
+# ADMIN MANUAL SEND BANNER
+# ---------------------------------------------------------------------------
+@bot.message_handler(commands=["send"])
+def cmd_send_manual_banner(message):
+    if not is_admin(message):
+        try: bot.delete_message(message.chat.id, message.message_id)
+        except Exception: pass
+        return
+
+    try:
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("🎮 አሁን ይጫወቱ (Play Now)", url="https://t.me/chelabingobot"))
+        
+        welcome_text = (
+            "🎰 *እንኳን ወደ Chela Bingo በደህና መጡ!* 🎉\n\n"
+            "በዚህ ግሩፕ ውስጥ አዝናኝ የቢንጎ ጨዋታዎችን፣ ዕለታዊ ጃክፖቶችን እና አዳዲስ የጨዋታ መረጃዎችን ያገኛሉ! 💸✨\n\n"
+            "🎰 ምን ይጠብቆታል?\n"
+            "🔹 ዕለታዊ ጃክፖቶች 💰\n"
+            "🔹 የተለያዩ የጨዋታ አማራጮች 🎯\n"
+            "🔹 ልዩ እና አዝናኝ የቢንጎ ቅጦች ✨\n\n"
+            "ለመጫወት እና ለማሸነፍ ዝግጁ ነዎት? አሁኑኑ ይጀምሩ! መልካም ዕድል! 🍀\n\n"
+            "📍 አብረውን ስለሆኑ እናመሰግናለን!"
+        )
+        
+        bot.send_photo(
+            message.chat.id, 
+            open('banner.jpg', 'rb'), 
+            caption=welcome_text,
+            reply_markup=kb
+        )
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Error sending banner: {e}")
+        print(f"Error sending manual banner: {e}")
 
 # ---------------------------------------------------------------------------
 # CONTACT REGISTRATION
 # ---------------------------------------------------------------------------
 @bot.message_handler(content_types=["contact"])
 def handle_contact(message):
+    if not can_execute_command(message, allow_group_admin=False): return
+    
     chat_id = message.chat.id
     contact = message.contact
     lang    = get_lang(chat_id)
@@ -462,8 +614,6 @@ def handle_contact(message):
     username    = message.from_user.username
     phone       = contact.phone_number  
     display     = f"{first_name} {last_name}".strip() or f"Player_{tg_id}"
-    
-    # Fetch intercepted referrer ID
     ref_id = user_ref_data.get(chat_id, None)
 
     if _supabase is not None:
@@ -491,6 +641,10 @@ def handle_contact(message):
 # ---------------------------------------------------------------------------
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
+    if call.message.chat.type != "private":
+        bot.answer_callback_query(call.id)
+        return
+        
     chat_id = call.message.chat.id
     data    = call.data
     lang    = get_lang(chat_id)
@@ -499,7 +653,6 @@ def handle_callback(call):
         bot.answer_callback_query(call.id)
         selected_lang = data.split("|")[1]
         set_lang(chat_id, selected_lang)
-        
         if _is_user_registered(call.from_user.id):
             bot.send_message(chat_id, STRINGS[selected_lang]["welcome_back"], reply_markup=main_menu_markup(selected_lang))
         else:
@@ -511,9 +664,8 @@ def handle_callback(call):
 
     elif data == "action_balance":
         bot.answer_callback_query(call.id)
-        total_bal, promo_bal = _get_user_wallet(call.from_user.id)
-        withdrawable = total_bal - promo_bal
-        bot.send_message(chat_id, STRINGS[lang]["curr_bal"].format(total_bal, withdrawable, promo_bal))
+        real_bal, promo_bal, total_bal = _get_user_wallet(call.from_user.id)
+        bot.send_message(chat_id, STRINGS[lang]["curr_bal"].format(total_bal, real_bal, promo_bal))
         bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
 
     elif data == "action_deposit":
@@ -552,6 +704,14 @@ def handle_callback(call):
 # ---------------------------------------------------------------------------
 @bot.message_handler(func=lambda m: m.content_type == "text" and not m.text.startswith("/"))
 def handle_text(message):
+    # Public group text cleanup rules
+    if message.chat.type != "private":
+        # Delete typical members' chatter to ensure zero clutter, but allow your account to talk freely
+        if not is_admin(message):
+            try: bot.delete_message(message.chat.id, message.message_id)
+            except Exception: pass
+        return
+
     chat_id = message.chat.id
     text    = message.text.strip()
     state   = get_state(chat_id)
@@ -563,18 +723,11 @@ def handle_text(message):
         bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
         return
 
-    # 🚀 X-RAY VERIFICATION ENGINE
     if state == STATE_AWAITING_TXN_SMS:
         set_state(chat_id, STATE_IDLE)
-        
         extracted_id = _extract_transaction_id(text)
-        
         if not extracted_id:
-            bot.send_message(
-                chat_id, 
-                "❌ *Invalid Text Format:*\nWe could not find a valid Transaction ID in your message. Please make sure you copy and paste the *entire* SMS from the bank.", 
-                reply_markup=remove_keyboard()
-            )
+            bot.send_message(chat_id, "❌ *Invalid Text Format:*\nWe could not find a valid Transaction ID in your message. Please make sure you copy and paste the *entire* SMS from the bank.", reply_markup=remove_keyboard())
             bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
             return
             
@@ -590,15 +743,10 @@ def handle_text(message):
         wait_msg = bot.send_message(chat_id, STRINGS[lang]["checking_api"])
         url = "https://verifyapi.leulzenebe.pro/verify"
         payload = {"reference": clean_txn_id}
-        headers = {
-            "x-api-key": VERIFIER_API_KEY,
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        }
+        headers = {"x-api-key": VERIFIER_API_KEY, "Content-Type": "application/json", "Accept": "application/json"}
 
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=20)
-            
             if response.status_code != 200:
                 _release_transaction(clean_txn_id)
                 bot.delete_message(chat_id, wait_msg.message_id)
@@ -622,7 +770,6 @@ def handle_text(message):
             settled_amt_raw = str(payload_data.get("settledAmount", "0"))
             amt_match = re.search(r"[\d\.]+", settled_amt_raw.replace(',', ''))
             verified_amount = float(amt_match.group(0)) if amt_match else 0.0
-            
             receiver_name = str(payload_data.get("creditedPartyName", "")).upper()
             receiver_account = str(payload_data.get("creditedPartyAccountNo", ""))
 
@@ -631,7 +778,6 @@ def handle_text(message):
                 if valid_name in receiver_name:
                     is_valid_destination = True
                     break
-            
             if not is_valid_destination:
                 for valid_account in VALID_MERCHANT_ACCOUNTS:
                     if valid_account[-4:] in receiver_account:
@@ -646,25 +792,15 @@ def handle_text(message):
                 return
 
             if verified_amount >= expected_amount and verified_amount > 0:
-                total_bal, promo_bal = _get_user_wallet(message.from_user.id)
-                new_balance = total_bal + verified_amount
-                
+                real_bal, promo_bal, total_bal = _get_user_wallet(message.from_user.id)
+                new_balance = real_bal + verified_amount
                 if _supabase is not None:
                     _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
-                    _supabase.table("transactions").insert({
-                        "user_id": str(message.from_user.id),
-                        "amount": verified_amount,
-                        "tx_type": "deposit",
-                        "status": "completed"
-                    }).execute()
-
+                    _supabase.table("transactions").insert({"user_id": str(message.from_user.id), "amount": verified_amount, "tx_type": "deposit", "status": "completed"}).execute()
                 bot.delete_message(chat_id, wait_msg.message_id)
                 bot.send_message(chat_id, STRINGS[lang]["api_success"].format(verified_amount), reply_markup=remove_keyboard())
-                
-                try:
-                    bot.send_message(ADMIN_IDS[0], f"🟢 *AUTOMATED DEPOSIT SUCCESS*\nUser ID: `{message.from_user.id}`\nRef: `{clean_txn_id}`\nCredited: `{verified_amount} ETB`")
-                except Exception:
-                    pass
+                try: bot.send_message(ADMIN_IDS[0], f"🟢 *AUTOMATED DEPOSIT SUCCESS*\nUser ID: `{message.from_user.id}`\nRef: `{clean_txn_id}`\nCredited: `{verified_amount} ETB`")
+                except Exception: pass
             else:
                 _release_transaction(clean_txn_id)
                 bot.delete_message(chat_id, wait_msg.message_id)
@@ -674,13 +810,12 @@ def handle_text(message):
             _release_transaction(clean_txn_id)
             bot.delete_message(chat_id, wait_msg.message_id)
             bot.send_message(chat_id, STRINGS[lang]["api_error"], reply_markup=remove_keyboard())
-        except Exception as e:
+        except Exception:
             _release_transaction(clean_txn_id)
             if 'wait_msg' in locals():
                 try: bot.delete_message(chat_id, wait_msg.message_id)
                 except Exception: pass
             bot.send_message(chat_id, STRINGS[lang]["api_error"], reply_markup=remove_keyboard())
-
         bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
         return
 
@@ -688,8 +823,7 @@ def handle_text(message):
         try:
             clean_text_amount = text.replace(',', '')
             amount = float(clean_text_amount)
-            if amount <= 0:
-                raise ValueError
+            if amount <= 0: raise ValueError
         except ValueError:
             bot.send_message(chat_id, STRINGS[lang]["invalid_amount"])
             return
@@ -698,14 +832,10 @@ def handle_text(message):
             if amount < 50:
                 bot.send_message(chat_id, STRINGS[lang]["min_dep_err"])
                 return
-                
-            if chat_id not in user_deposit_data:
-                user_deposit_data[chat_id] = {"provider": "telebirr"}
-            
+            if chat_id not in user_deposit_data: user_deposit_data[chat_id] = {"provider": "telebirr"}
             user_deposit_data[chat_id]["amount"] = amount
             provider = user_deposit_data[chat_id]["provider"]
             set_state(chat_id, STATE_AWAITING_TXN_SMS)
-            
             inst_txt = STRINGS[lang][f"inst_{provider}"].format(amount)
             bot.send_message(chat_id, inst_txt, reply_markup=cancel_reply_keyboard(lang), parse_mode="HTML")
 
@@ -713,27 +843,16 @@ def handle_text(message):
             if amount < 100:
                 bot.send_message(chat_id, STRINGS[lang]["min_with_err"])
                 return
-                
-            total_bal, promo_bal = _get_user_wallet(message.from_user.id)
-            withdrawable = total_bal - promo_bal
+            real_bal, promo_bal, total_bal = _get_user_wallet(message.from_user.id)
             set_state(chat_id, STATE_IDLE)
-            
-            if amount > withdrawable:
-                bot.send_message(chat_id, STRINGS[lang]["promo_locked_err"].format(withdrawable, promo_bal), reply_markup=remove_keyboard())
+            if amount > real_bal:
+                bot.send_message(chat_id, STRINGS[lang]["promo_locked_err"].format(real_bal, promo_bal), reply_markup=remove_keyboard())
             else:
                 if _supabase is not None:
-                    new_balance = total_bal - amount
+                    new_balance = real_bal - amount
                     _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
-                    
-                    _supabase.table("transactions").insert({
-                        "user_id": str(message.from_user.id),
-                        "amount": amount,
-                        "tx_type": "withdrawal",
-                        "status": "pending"
-                    }).execute()
-
+                    _supabase.table("transactions").insert({"user_id": str(message.from_user.id), "amount": amount, "tx_type": "withdrawal", "status": "pending"}).execute()
                 bot.send_message(chat_id, STRINGS[lang]["with_submitted"].format(amount), reply_markup=remove_keyboard())
-
             bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
         return
 
@@ -745,46 +864,32 @@ def handle_text(message):
 # ---------------------------------------------------------------------------
 @bot.message_handler(commands=["credit"])
 def cmd_credit(message):
+    if not is_admin(message): return
     admin_id = message.from_user.id
     chat_id  = message.chat.id
-
-    if not is_admin(admin_id):
-        return
-
     parts = message.text.strip().split()
     if len(parts) < 2:
         bot.send_message(chat_id, "⚠️ *Usage:* `/credit <amount> [target_tg_id]`")
         return
-
     try:
         amount = float(parts[1])
     except ValueError:
         bot.send_message(chat_id, "⚠️ Invalid amount.")
         return
-
     target_tg_id = admin_id
     if len(parts) >= 3:
-        try:
-            target_tg_id = int(parts[2])
+        try: target_tg_id = int(parts[2])
         except ValueError:
             bot.send_message(chat_id, "⚠️ Invalid target ID.")
             return
-
-    if _supabase is None:
-        return
-
+    if _supabase is None: return
     try:
-        total_bal, promo_bal = _get_user_wallet(target_tg_id)
-        new_bal = total_bal + amount
+        real_bal, promo_bal, total_bal = _get_user_wallet(target_tg_id)
+        new_bal = real_bal + amount
         _supabase.table("tg_users").update({"balance": new_bal}).eq("tg_id", target_tg_id).execute()
-
-        bot.send_message(chat_id, f"✅ *Credited {amount:.2f} ETB* to `{target_tg_id}`.\n\n💰 *New balance:* `{new_bal:.2f} ETB`")
-        
-        try:
-            bot.send_message(target_tg_id, f"🎉 *Deposit Successful!*\n\nYour account has been credited with `{amount:.2f} ETB`.")
-        except Exception:
-            pass
-        
+        bot.send_message(chat_id, f"✅ *Credited {amount:.2f} ETB* to `{target_tg_id}`.\n\n💰 *New Real Balance:* `{new_bal:.2f} ETB`")
+        try: bot.send_message(target_tg_id, f"🎉 *Deposit Successful!*\n\nYour account has been credited with `{amount:.2f} ETB`.")
+        except Exception: pass
     except Exception as e:
         bot.send_message(chat_id, f"❌ *Credit failed.*\n\nError: `{str(e)[:200]}`")
 
