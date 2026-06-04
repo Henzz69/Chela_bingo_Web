@@ -183,6 +183,19 @@ def set_lang(chat_id: int, lang: str) -> None:
     user_lang[chat_id] = lang
 
 # ---------------------------------------------------------------------------
+# HELPER: RESTRICT TO PRIVATE CHATS
+# ---------------------------------------------------------------------------
+def enforce_private_chat(message) -> bool:
+    """Returns True if private, otherwise deletes the group message and returns False."""
+    if message.chat.type != "private":
+        try:
+            bot.delete_message(message.chat.id, message.message_id)
+        except Exception:
+            pass
+        return False
+    return True
+
+# ---------------------------------------------------------------------------
 # DICTIONARY FOR STRINGS (BILINGUAL)
 # ---------------------------------------------------------------------------
 STRINGS = {
@@ -381,6 +394,8 @@ def _extract_transaction_id(text: str):
 # ---------------------------------------------------------------------------
 @bot.message_handler(commands=["start"])
 def cmd_start(message):
+    if not enforce_private_chat(message): return
+    
     chat_id = message.chat.id
     set_state(chat_id, STATE_IDLE)
     
@@ -417,6 +432,8 @@ def cmd_start(message):
 
 @bot.message_handler(commands=["play"])
 def cmd_play(message):
+    if not enforce_private_chat(message): return
+    
     chat_id = message.chat.id
     lang = get_lang(chat_id)
     kb = InlineKeyboardMarkup()
@@ -442,18 +459,24 @@ def cmd_play(message):
 
 @bot.message_handler(commands=["invite"])
 def cmd_invite(message):
+    if not enforce_private_chat(message): return
+    
     chat_id = message.chat.id
     lang = get_lang(chat_id)
     bot.send_message(chat_id, STRINGS[lang]["invite_msg"].format(message.from_user.id))
 
 @bot.message_handler(commands=["support"])
 def cmd_support(message):
+    if not enforce_private_chat(message): return
+    
     chat_id = message.chat.id
     lang = get_lang(chat_id)
     bot.send_message(chat_id, STRINGS[lang]["support_msg"])
 
 @bot.message_handler(commands=["balance"])
 def cmd_balance(message):
+    if not enforce_private_chat(message): return
+    
     chat_id = message.chat.id
     lang = get_lang(chat_id)
     total_bal, promo_bal = _get_user_wallet(message.from_user.id)
@@ -463,12 +486,16 @@ def cmd_balance(message):
 
 @bot.message_handler(commands=["deposit"])
 def cmd_deposit(message):
+    if not enforce_private_chat(message): return
+    
     chat_id = message.chat.id
     lang = get_lang(chat_id)
     bot.send_message(chat_id, STRINGS[lang]["choose_provider"], reply_markup=payment_methods_markup())
 
 @bot.message_handler(commands=["withdraw"])
 def cmd_withdraw(message):
+    if not enforce_private_chat(message): return
+    
     chat_id = message.chat.id
     lang = get_lang(chat_id)
     set_state(chat_id, STATE_AWAITING_WITHDRAW)
@@ -529,6 +556,8 @@ def cmd_send_manual_banner(message):
 # ---------------------------------------------------------------------------
 @bot.message_handler(content_types=["contact"])
 def handle_contact(message):
+    if not enforce_private_chat(message): return
+    
     chat_id = message.chat.id
     contact = message.contact
     lang    = get_lang(chat_id)
@@ -570,6 +599,10 @@ def handle_contact(message):
 # ---------------------------------------------------------------------------
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
+    if call.message.chat.type != "private":
+        bot.answer_callback_query(call.id)
+        return
+        
     chat_id = call.message.chat.id
     data    = call.data
     lang    = get_lang(chat_id)
@@ -630,6 +663,8 @@ def handle_callback(call):
 # ---------------------------------------------------------------------------
 @bot.message_handler(func=lambda m: m.content_type == "text" and not m.text.startswith("/"))
 def handle_text(message):
+    if not enforce_private_chat(message): return
+    
     chat_id = message.chat.id
     text    = message.text.strip()
     state   = get_state(chat_id)
