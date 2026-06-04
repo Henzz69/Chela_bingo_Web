@@ -480,6 +480,39 @@ def cmd_testsms(message):
         bot.send_message(message.chat.id, f"❌ *FAILED!*\nThe bot could not find a valid alphanumeric transaction ID in that text.")
 
 # ---------------------------------------------------------------------------
+# ADMIN MANUAL SEND BANNER
+# ---------------------------------------------------------------------------
+@bot.message_handler(commands=["send"])
+def cmd_send_manual_banner(message):
+    if not is_admin(message.from_user.id):
+        return
+
+    try:
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("🎮 አሁን ይጫወቱ (Play Now)", url="https://t.me/chelabingobot"))
+        
+        welcome_text = (
+            "እንኳን ወደ Chela Bingo በደህና መጡ! 🎉\n"
+            "በዚህ ግሩፕ ውስጥ አዝናኝ የቢንጎ ጨዋታዎችን፣ ዕለታዊ ጃክፖቶችን እና አዳዲስ የጨዋታ መረጃዎችን ያገኛሉ! 💸✨\n"
+            "🎰 ምን ይጠብቆታል?\n"
+            "🔹 ዕለታዊ ጃክፖቶች 💰\n"
+            "🔹 የተለያዩ የጨዋታ አማራጮች 🎯\n"
+            "🔹 ልዩ እና አዝናኝ የቢንጎ ቅጦች ✨\n"
+            "ለመጫወት እና ለማሸነፍ ዝግጁ ነዎት? አሁኑኑ ይጀምሩ! መልካም ዕድል! 🍀\n"
+            "📍 አብረውን ስለሆኑ እናመሰግናለን!"
+        )
+        
+        bot.send_photo(
+            message.chat.id, 
+            open('banner.jpg', 'rb'), 
+            caption=welcome_text,
+            reply_markup=kb
+        )
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Error sending banner: {e}")
+        print(f"Error sending manual banner: {e}")
+
+# ---------------------------------------------------------------------------
 # CONTACT REGISTRATION
 # ---------------------------------------------------------------------------
 @bot.message_handler(content_types=["contact"])
