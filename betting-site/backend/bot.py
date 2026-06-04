@@ -126,7 +126,7 @@ def _start_tunnel(port: int = 3000) -> str:
     _tunnel_proc = subprocess.Popen(["npx", "localtunnel", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
     url = None
     for line in _tunnel_proc.stdout:
-        match = re.search(r"your url is:\s*(https://\S+)", line)
+        match = re.search(r"your url is:\s*(https://S+)", line)
         if match:
             url = match.group(1).strip()
             break
@@ -183,11 +183,15 @@ def set_lang(chat_id: int, lang: str) -> None:
     user_lang[chat_id] = lang
 
 # ---------------------------------------------------------------------------
-# HELPER: RESTRICT TO PRIVATE CHATS
+# HELPER: RESTRICT TO PRIVATE CHATS WITH ADMIN BYPASS
 # ---------------------------------------------------------------------------
 def enforce_private_chat(message) -> bool:
-    """Returns True if private, otherwise deletes the group message and returns False."""
+    """Returns True if private or if user is admin, otherwise deletes the group message and returns False."""
     if message.chat.type != "private":
+        # Allow admins to bypass the group restriction
+        if is_admin(message.from_user.id):
+            return True
+            
         try:
             bot.delete_message(message.chat.id, message.message_id)
         except Exception:
