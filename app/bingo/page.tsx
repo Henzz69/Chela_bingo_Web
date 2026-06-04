@@ -7,9 +7,17 @@ import { useTelegram } from '@/lib/useTelegram';
 import { supabase } from '@/lib/supabaseClient';
 import BingoGameBoard from './GameBoard';
 import BingoCardSelection from './CardSelection';
-import ThemeToggle from '@/components/ThemeToggle'; // 🚀 IMPORTED THE TOGGLE
+import ThemeToggle from '@/components/ThemeToggle';
 
-interface WalletData { name: string; wallet: number; transactions: Array<any>; gameHistory: Array<any>; }
+// 🚀 UPGRADED WALLET DATA INTERFACE
+interface WalletData { 
+  name: string; 
+  wallet: number; 
+  promo_balance: number; 
+  total_balance: number; 
+  transactions?: Array<any>; 
+  gameHistory?: Array<any>; 
+}
 
 const STAKE_OPTIONS = [
   { label: '10 ETB', amount: 10, players: 100, maxPrize: 800 },
@@ -18,12 +26,10 @@ const STAKE_OPTIONS = [
   { label: '100 ETB', amount: 100, players: 100, maxPrize: 8000 },
 ];
 
-// 🚀 PHASE 1: COMPONENT ISOLATION (Zero Main-Thread Bloat)
 function GameHistoryLogs({ tgId }: { tgId: number }) {
   const [logs, setLogs] = useState<any[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(true);
 
-  // 🚀 PHASE 2 & 3: THE UPGRADED ENRICHED QUERY
   useEffect(() => {
     const fetchHistory = async () => {
       if (!tgId) return;
@@ -108,9 +114,6 @@ function GameHistoryLogs({ tgId }: { tgId: number }) {
   );
 }
 
-// ============================================================================
-// MAIN PAGE COMPONENT
-// ============================================================================
 export default function BingoPage() {
   const { tgId, isTelegram, haptic } = useTelegram();
   const { screen, fetchRooms, isRecovering, recoverSession, loadingRooms, theme } = useBingoStore();
@@ -122,7 +125,6 @@ export default function BingoPage() {
   const [wallet, setWallet] = useState<WalletData | null>(null);
   const [walletLoading, setWalletLoading] = useState(false);
 
-  // 🚀 THE ULTIMATE THEME ENGINE
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const root = document.documentElement;
@@ -211,7 +213,6 @@ export default function BingoPage() {
             </motion.div>
           </motion.button>
           
-          {/* 🚀 THE FIXED THEME TOGGLE: Preserves your styling but uses the new component */}
           <div className="w-10 h-10 flex items-center justify-center rounded-full bg-[#DCFCE7] dark:bg-white/5 border border-[#22C55E]/30 dark:border-white/10 text-[#064E3B] dark:text-white/60 hover:bg-[#bbf7d0] dark:hover:bg-white/15 dark:hover:text-white transition-all shadow-sm overflow-hidden">
              <ThemeToggle />
           </div>
@@ -228,7 +229,7 @@ export default function BingoPage() {
         <div className="bg-white dark:bg-[#062416] border border-[#22C55E]/30 dark:border-green-500/30 rounded-2xl p-4 flex justify-between items-center shadow-sm dark:shadow-[0_4px_20px_rgba(34,197,94,0.15)] transition-colors">
           <span className="text-[#064E3B]/70 dark:text-white/60 font-medium text-sm">Balance</span>
           <span className="text-green-500 dark:text-green-400 font-black text-xl tracking-tight">
-            {walletLoading ? '…' : (wallet?.wallet !== undefined && wallet?.wallet !== null) ? `${Number(wallet.wallet).toFixed(2)} ETB` : '0.00 ETB'}
+            {walletLoading ? '…' : (wallet?.total_balance !== undefined && wallet?.total_balance !== null) ? `${Number(wallet.total_balance).toFixed(2)} ETB` : '0.00 ETB'}
           </span>
         </div>
       </header>
@@ -277,7 +278,6 @@ export default function BingoPage() {
                 </motion.div>
               )}
 
-              {/* 🚀 PHASE 4: THE ISOLATED LOGS INJECTION */}
               {tab === 'logs' && <GameHistoryLogs tgId={tgId!} />}
 
               {tab === 'top' && (
@@ -300,10 +300,25 @@ export default function BingoPage() {
                   <div className="w-full bg-white dark:bg-[#062416] border border-[#22C55E]/30 dark:border-green-500/30 rounded-3xl p-6 shadow-md dark:shadow-[0_10px_30px_rgba(34,197,94,0.1)] text-center transition-colors">
                     <div className="w-24 h-24 bg-[#F0FDF4] dark:bg-[#0a4a2e] border border-[#22C55E]/30 dark:border-none rounded-full mx-auto mb-4 flex items-center justify-center text-4xl">👤</div>
                     <h3 className="text-2xl font-black mb-6">{wallet?.name || 'Player'}</h3>
+                    
                     <div className="bg-[#F0FDF4] dark:bg-[#02120b] border border-[#22C55E]/30 dark:border-none rounded-2xl p-4 mb-6">
-                      <div className="text-xs text-[#064E3B]/60 dark:text-white/50 uppercase tracking-widest mb-1 font-bold">Balance</div>
-                      <div className="text-3xl font-black text-green-600 dark:text-green-400">{((wallet?.wallet !== undefined && wallet?.wallet !== null) ? Number(wallet.wallet).toFixed(2) : '0.00')} ETB</div>
+                      <div className="text-xs text-[#064E3B]/60 dark:text-white/50 uppercase tracking-widest mb-1 font-bold">Total Balance</div>
+                      <div className="text-3xl font-black text-green-600 dark:text-green-400 mb-3">
+                        {((wallet?.total_balance !== undefined && wallet?.total_balance !== null) ? Number(wallet.total_balance).toFixed(2) : '0.00')} ETB
+                      </div>
+                      
+                      <div className="flex justify-between items-center border-t border-[#22C55E]/20 dark:border-white/10 pt-3 mt-2">
+                         <div className="text-left">
+                           <div className="text-[10px] text-[#064E3B]/50 dark:text-white/40 uppercase font-bold">Withdrawable</div>
+                           <div className="text-sm font-black text-[#064E3B] dark:text-white/80">{Number(wallet?.wallet || 0).toFixed(2)}</div>
+                         </div>
+                         <div className="text-right">
+                           <div className="text-[10px] text-yellow-600 dark:text-yellow-500/80 uppercase font-bold">Promo Bonus 🎁</div>
+                           <div className="text-sm font-black text-yellow-600 dark:text-yellow-400">{Number(wallet?.promo_balance || 0).toFixed(2)}</div>
+                         </div>
+                      </div>
                     </div>
+
                     <div className="text-xs text-[#064E3B]/60 dark:text-white/40 font-medium">Manage funds through the Telegram Bot.</div>
                   </div>
                 </motion.div>
@@ -314,21 +329,17 @@ export default function BingoPage() {
           {screen === 'select' && (
             <motion.div key="select" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }} className="flex-1 flex flex-col relative h-full">
               
-              {/* 🚀 THE BULLETPROOF FADE HEADER */}
               <div className="sticky top-0 z-30 flex flex-col pointer-events-none">
-                {/* 1. The Solid Safe Area (Allows clicking) */}
                 <div className="flex items-center justify-between pt-4 pb-2 bg-[#F0FDF4] dark:bg-[#02120b] transition-colors pointer-events-auto px-4">
                   <motion.button whileTap={{ scale: 0.95 }} onClick={() => useBingoStore.setState({ screen: 'lobby' })} className="flex items-center gap-1 text-[#064E3B]/70 dark:text-white/60 hover:text-black dark:hover:text-white text-sm font-bold">← Back</motion.button>
                   <span className="font-bold text-lg drop-shadow-md">Choose Room</span>
                   <div className="w-8 h-8" />
                 </div>
-                {/* 2. The Transparent Gradient Fringe (Overlaps the cards) */}
                 <div className="h-10 w-full bg-linear-to-b from-[#F0FDF4] dark:from-[#02120b] to-transparent transition-colors -mb-10" />
               </div>
 
               {error && <div className="mb-3 mt-6 bg-red-100 dark:bg-red-500/20 border border-red-300 dark:border-red-500/40 rounded-xl px-3 py-2 text-red-600 dark:text-red-300 text-sm font-bold relative z-10">{error}</div>}
 
-              {/* The Scrollable List */}
               <div className="space-y-4 pb-24 pt-4 overflow-y-auto flex-1 relative z-10 px-4 scrollbar-hide">
                 {STAKE_OPTIONS.map((opt, index) => {
                   const isThisLoading = loadingStakeId === opt.amount.toString();
