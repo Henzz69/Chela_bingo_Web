@@ -55,7 +55,15 @@ export default function BingoGameBoard({ tgId }: Props) {
   const [showFalseAlarm, setShowFalseAlarm] = useState(false);
   const [showLeaveWarning, setShowLeaveWarning] = useState(false);
   
-  const playerCount = takenCardIds.size;
+  // 🚀 THE REACTIVITY FIX: Force React to track the Set size dynamically
+  const [playerCount, setPlayerCount] = useState<number>(1);
+
+  useEffect(() => {
+    if (takenCardIds && typeof takenCardIds.size === 'number') {
+      setPlayerCount(Math.max(takenCardIds.size, 1));
+    }
+  }, [takenCardIds, takenCardIds?.size]); 
+  
   const isReadyToStart = playerCount >= 2;
   const lastDrawn = drawnNumbers.length > 0 ? drawnNumbers[drawnNumbers.length - 1] : null;
 
