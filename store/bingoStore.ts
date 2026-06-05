@@ -258,8 +258,13 @@ export const useBingoStore = create<BingoState>((set, get) => ({
       .channel(`bingo-cards-${roomId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bingo_cards', filter: `room_id=eq.${roomId}`}, 
         (payload: any) => {
-          if (payload.new && payload.new.card_index) {
-            set((state) => ({ takenCardIds: new Set(state.takenCardIds).add(payload.new.card_index) }));
+          // 🚀 THE FIX: Catch both INSERT and UPDATE, and ensure card_index exists and React sees the mutation
+          if (payload.new && payload.new.card_index !== null) {
+            set((state) => {
+              const updatedSet = new Set(state.takenCardIds);
+              updatedSet.add(payload.new.card_index);
+              return { takenCardIds: updatedSet };
+            });
           }
         }
       )
@@ -404,7 +409,16 @@ export const useBingoStore = create<BingoState>((set, get) => ({
             isRecovering: false
           });
 
-        } else if (card.status === 'ready') {
+        } else if (card.status === 'ready' || card.status === 'active') {
+          // 🚀 THE FIX: Force the store to fetch all active bots/players on reload!
+          const { data: activePlayersData } = await supabase
+            .from('bingo_cards')
+            .select('card_index')
+            .eq('room_id', room.id)
+            .not('card_index', 'is', null);
+
+          const activePlayersSet = new Set((activePlayersData || []).map(t => t.card_index));
+
           const currentDaubed = new Set(card.daubed || [12]);
           const drawnList = room.drawn_numbers || [];
           const winResult = checkWin(card.grid, currentDaubed, new Set(drawnList));
@@ -417,6 +431,7 @@ export const useBingoStore = create<BingoState>((set, get) => ({
             gameStatus: room.status,
             winResult: winResult,
             screen: 'game',
+            takenCardIds: activePlayersSet, // <-- Injected the missing data!
             isRecovering: false
           });
         }
