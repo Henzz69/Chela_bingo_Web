@@ -16,7 +16,6 @@ export interface BingoRoom {
   winner_id?: string | null;
   active_game_count?: number; 
   generation_seed?: string; 
-  // 🚀 NEW: Type definition for the real-time proof of win snapshot
   winning_card_snapshot?: { grid: number[], daubed: number[] };
 }
 
@@ -31,11 +30,9 @@ export interface GameSession {
 }
 
 interface BingoState {
-  // ☀️ THEME STATE
   theme: 'dark' | 'light';
   toggleTheme: () => void;
 
-  // 🤖 AUTO-DAUB STATE
   isAutoMode: boolean;
   toggleAutoMode: () => void;
 
@@ -77,11 +74,9 @@ interface BingoState {
 }
 
 export const useBingoStore = create<BingoState>((set, get) => ({
-  // ☀️ THEME INITIALIZATION
   theme: 'dark',
   toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
 
-  // 🤖 AUTO-DAUB INITIALIZATION (Default ON for casuals)
   isAutoMode: true,
   toggleAutoMode: () => set((state) => ({ isAutoMode: !state.isAutoMode })),
 
@@ -229,7 +224,6 @@ export const useBingoStore = create<BingoState>((set, get) => ({
         (payload) => {
           const { gameStatus } = get();
 
-          // 🛡️ THE FRONTEND LATCH
           if (gameStatus === 'finished') {
             return;
           }
@@ -258,7 +252,6 @@ export const useBingoStore = create<BingoState>((set, get) => ({
       .channel(`bingo-cards-${roomId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bingo_cards', filter: `room_id=eq.${roomId}`}, 
         (payload: any) => {
-          // 🚀 THE FIX: Catch both INSERT and UPDATE, and ensure card_index exists and React sees the mutation
           if (payload.new && payload.new.card_index !== null) {
             set((state) => {
               const updatedSet = new Set(state.takenCardIds);
@@ -293,6 +286,7 @@ export const useBingoStore = create<BingoState>((set, get) => ({
       clearTimeout(daubSyncTimeout);
     }
     
+    // 🚀 TURBO FIX: Reduced to 200ms to rapidly commit UI state to DB before claims
     daubSyncTimeout = setTimeout(async () => {
       try {
         await supabase.rpc('bingo_daub_cell', {
@@ -302,7 +296,7 @@ export const useBingoStore = create<BingoState>((set, get) => ({
       } catch (error) {
         console.error("Failed to sync daub to secure server:", error);
       }
-    }, 1000);
+    }, 200); 
   },
 
   claimBingo: async (tgId: number) => {
@@ -339,7 +333,6 @@ export const useBingoStore = create<BingoState>((set, get) => ({
       console.error("Claim Error:", e);
       const errorMessage = e.message || "";
 
-      // 🚀 RACE CONDITION FIX: Graceful Defeat
       if (errorMessage.includes('already been won')) {
          set({ 
            payout: null,
@@ -410,7 +403,6 @@ export const useBingoStore = create<BingoState>((set, get) => ({
           });
 
         } else if (card.status === 'ready' || card.status === 'active') {
-          // 🚀 THE FIX: Force the store to fetch all active bots/players on reload!
           const { data: activePlayersData } = await supabase
             .from('bingo_cards')
             .select('card_index')
@@ -431,7 +423,7 @@ export const useBingoStore = create<BingoState>((set, get) => ({
             gameStatus: room.status,
             winResult: winResult,
             screen: 'game',
-            takenCardIds: activePlayersSet, // <-- Injected the missing data!
+            takenCardIds: activePlayersSet, 
             isRecovering: false
           });
         }
