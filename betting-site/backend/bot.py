@@ -137,7 +137,7 @@ def _start_tunnel(port: int = 3000) -> str:
     _tunnel_proc = subprocess.Popen(["npx", "localtunnel", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
     url = None
     for line in _tunnel_proc.stdout:
-        match = re.search(r"your url is:\s*(https://\S+)", line)
+        match = re.search(r"your url is:\s*(https://S+)", line)
         if match:
             url = match.group(1).strip()
             break
@@ -231,7 +231,7 @@ STRINGS = {
         "enter_with_amount": "📤 *Withdraw Funds*\n\nPlease enter the amount you want to withdraw:",
         "invalid_amount": "⚠️ Please enter a valid positive number.",
         "min_dep_err": "⚠️ *Invalid Amount:* The minimum deposit amount is 50 ETB.",
-        "min_with_err": "⚠️ *Invalid Amount:* The minimum withdrawal amount is 100 ETB.",
+        "min_with_err": "⚠️ *Invalid Amount:* The minimum withdrawal amount is 500 ETB.",
         "insufficient": "❌ Insufficient Balance. You only have `{:.2f} ETB` withdrawable cash.",
         "promo_locked_err": "❌ *Withdrawal Failed*\n\nYou requested more than your withdrawable limit.\n\n🔓 Withdrawable: `{:.2f} ETB`\n🎁 Promo (Gameplay Only): `{:.2f} ETB`",
         "with_submitted": "✅ Withdrawal request of `{:.0f} ETB` submitted! Our team will process it shortly.",
@@ -270,7 +270,7 @@ STRINGS = {
         "enter_with_amount": "📤 *ገንዘብ ማውጫ*\n\nእባክዎ ማውጣት የሚፈልጉትን የገንዘብ መጠን ያስገቡ:",
         "invalid_amount": "⚠️ እባክዎን ትክክለኛ ቁጥር ያስገቡ።",
         "min_dep_err": "⚠️ *የተሳሳተ መጠን:* አነስተኛው የገንዘብ ማስገቢያ መጠን 50 ETB ነው።",
-        "min_with_err": "⚠️ *የተሳሳተ መጠን:* አነስተኛው የገንዘብ ማውጫ መጠን 100 ETB ነው።",
+        "min_with_err": "⚠️ *የተሳሳተ መጠን:* አነስተኛው የገንዘብ ማውጫ መጠን 500 ETB ነው።",
         "insufficient": "❌ በቂ ቀሪ ሂሳብ የለዎትም። ማውጣት የሚችሉት `{:.2f} ETB` ብቻ ነው።",
         "promo_locked_err": "❌ *ማውጣት አልተሳካም*\n\nከሚፈቀደው የማውጫ መጠን በላይ ጠይቀዋል።\n\n🔓 ማውጣት የሚቻለው: `{:.2f} ETB`\n🎁 ፕሮሞ (ለመጫወቻ ብቻ): `{:.2f} ETB`",
         "with_submitted": "✅ የ `{:.0f} ETB` ማውጫ ጥያቄዎ ቀርቧል! በቅርቡ እናስተናግዳለን።",
@@ -974,7 +974,7 @@ def handle_text(message):
             bot.send_message(chat_id, inst_txt, reply_markup=cancel_reply_keyboard(lang), parse_mode="HTML")
 
         elif state == STATE_AWAITING_WITHDRAW:
-            if amount < 100:
+            if amount < 500:
                 bot.send_message(chat_id, STRINGS[lang]["min_with_err"])
                 return
                 
