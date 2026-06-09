@@ -23,13 +23,6 @@ interface EnrichedTransaction {
   account_number?: string;  
 }
 
-interface DashboardStats {
-  deposits: number;
-  withdrawals: number;
-  gamesHosted: number;
-  netFlow: number;
-}
-
 interface AdminStats {
   total_profit: number;
   total_wallets: number;
@@ -47,7 +40,6 @@ export default function AdminDashboard() {
   const [passError, setPassError] = useState(false);
 
   const [timeScale, setTimeScale] = useState<TimeScale>('today');
-  const [stats, setStats] = useState<DashboardStats>({ deposits: 0, withdrawals: 0, gamesHosted: 0, netFlow: 0 });
   const [macroStats, setMacroStats] = useState<AdminStats | null>(null);
   
   const [pendingTxs, setPendingTxs] = useState<EnrichedTransaction[]>([]);
@@ -61,13 +53,6 @@ export default function AdminDashboard() {
     if (!isUnlocked) return;
     setIsLoadingData(true);
     
-    const now = new Date();
-    let startDate = new Date(0); 
-    if (timeScale === 'today') startDate = new Date(now.setHours(0,0,0,0));
-    if (timeScale === 'week') startDate = new Date(now.setDate(now.getDate() - 7));
-    if (timeScale === 'month') startDate = new Date(now.setDate(now.getDate() - 30));
-    const isoStart = startDate.toISOString();
-
     try {
       // Fetch Macro Stats safely
       const { data: globalData, error: globalErr } = await supabase.rpc('get_admin_stats');
@@ -134,33 +119,6 @@ export default function AdminDashboard() {
       setPendingTxs(enrichedWithdrawals);
       setRecentDeposits(enrichedDeposits);
 
-      // Fetch Time-Scaled Metrics
-      const { data: timeScaleTxData } = await supabase
-        .from('transactions')
-        .select('amount, tx_type')
-        .gte('created_at', isoStart)
-        .eq('status', 'completed');
-
-      const { count: gamesCount } = await supabase
-        .from('bingo_rooms')
-        .select('*', { count: 'exact', head: true })
-        .gte('created_at', isoStart);
-
-      let deposits = 0;
-      let withdrawals = 0;
-
-      timeScaleTxData?.forEach(tx => {
-        if (tx.tx_type === 'deposit') deposits += Number(tx.amount);
-        if (tx.tx_type === 'withdrawal') withdrawals += Number(tx.amount);
-      });
-
-      setStats({
-        deposits,
-        withdrawals,
-        gamesHosted: gamesCount || 0,
-        netFlow: deposits - withdrawals
-      });
-
     } catch (err) {
       console.error("Dashboard Sync Failed Entirely:", err);
     } finally {
@@ -204,12 +162,11 @@ export default function AdminDashboard() {
             
         if (error) throw error;
         
-        // Instant visual update instead of waiting for next sync interval
         setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
         await fetchDashboardData();
     } catch (err) {
         console.error("Approval Failed:", err);
-        alert("Error approving transaction. Open your browser console to inspect network status.");
+        alert("Error approving transaction. Check network status.");
     } finally {
         setProcessingTx(null);
     }
@@ -255,11 +212,8 @@ export default function AdminDashboard() {
 
         if (txErr) throw txErr;
 
-        // 5. Instantly flash the local state matrix so user experiences structural feedback
         setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
         alert(`✅ Success! Refunded ${refundAmount} ETB back to user.`);
-        
-        // Force background verification sync loop
         await fetchDashboardData();
 
     } catch (err) {
@@ -317,8 +271,8 @@ export default function AdminDashboard() {
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
               <span className="text-emerald-500 text-[10px] font-black tracking-widest">SYSTEM ONLINE</span>
             </div>
-            <button onClick={fetchDashboardData} className="text-[10px] text-neutral-400 bg-neutral-900 border border-neutral-800 px-2 py-0.5 mt-1 rounded hover:bg-neutral-800 active:scale-95 transition-all">
-              🔄 FORCE REFRESH
+            <button onClick={fetchDashboardData} disabled={isLoadingData} className="text-[10px] text-neutral-400 bg-neutral-900 border border-neutral-800 px-2 py-0.5 mt-1 rounded hover:bg-neutral-800 active:scale-95 transition-all">
+              {isLoadingData ? 'SYNCING...' : '🔄 FORCE REFRESH'}
             </button>
           </div>
         </header>
