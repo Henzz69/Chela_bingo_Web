@@ -2,12 +2,10 @@
 
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import supabase from '@/lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 
 // 🔒 THE MASTER PASSWORD VAULT
 const MASTER_PASSWORD = "chelahebenki2026";
-
-type TimeScale = 'today' | 'week' | 'month' | 'all';
 
 interface EnrichedTransaction {
   id: string;
@@ -27,6 +25,7 @@ interface AdminStats {
   total_profit: number;
   total_wallets: number;
   active_rooms: number;
+  pending_withdrawals_count: number;
 }
 
 interface UserLookup {
@@ -39,9 +38,7 @@ export default function AdminDashboard() {
   const [passInput, setPassInput] = useState('');
   const [passError, setPassError] = useState(false);
 
-  const [timeScale, setTimeScale] = useState<TimeScale>('today');
   const [macroStats, setMacroStats] = useState<AdminStats | null>(null);
-  
   const [pendingTxs, setPendingTxs] = useState<EnrichedTransaction[]>([]);
   const [recentDeposits, setRecentDeposits] = useState<EnrichedTransaction[]>([]);
   
@@ -54,11 +51,13 @@ export default function AdminDashboard() {
     setIsLoadingData(true);
 
     try {
-      // Fetch Macro Stats safely
+      // 1. Fetch Macro Stats securely via RPC
       const { data: globalData, error: globalErr } = await supabase.rpc('get_admin_stats');
-      if (!globalErr && globalData) setMacroStats(globalData as AdminStats);
+      if (!globalErr && globalData) {
+        setMacroStats(globalData as AdminStats);
+      }
 
-      // 1. Fetch ALL Pending Withdrawals Directly (Old data will now show)
+      // 2. Fetch ALL Pending Withdrawals (sorted newest first)
       const { data: pendingWithdrawalsData, error: pendingErr } = await supabase
           .from('transactions')
           .select('*')
@@ -66,18 +65,24 @@ export default function AdminDashboard() {
           .eq('status', 'pending')
           .order('created_at', { ascending: false });
 
-      if (pendingErr) console.error("Error fetching pending txs:", pendingErr);
+      if (pendingErr) {
+        console.error("Error fetching pending txs:", pendingErr);
+      }
 
-      // 2. Fetch Completed Deposits Directly (Always pulls last 100)
-      const { data: completedDepositsData } = await supabase
+      // 3. Fetch Completed Deposits (Last 100, sorted newest first)
+      const { data: completedDepositsData, error: depositErr } = await supabase
           .from('transactions')
           .select('*')
           .eq('tx_type', 'deposit')
           .eq('status', 'completed')
           .order('created_at', { ascending: false })
           .limit(100);
+          
+      if (depositErr) {
+        console.error("Error fetching deposits:", depositErr);
+      }
 
-      // 3. Fetch User Details to map names and phones
+      // 4. Fetch User Details to map names and phones
       const { data: usersData } = await supabase
           .from('tg_users')
           .select('tg_id, display_name, phone');
@@ -95,7 +100,7 @@ export default function AdminDashboard() {
           });
       }
 
-      // Enrich the transactions with User Data safely
+      // Enrich the withdrawals with User Data safely
       const enrichedWithdrawals = (pendingWithdrawalsData || []).map((tx: any) => {
           const lookupId = tx.user_id ? tx.user_id.toString() : '';
           const match = userMap[lookupId];
@@ -106,6 +111,7 @@ export default function AdminDashboard() {
           } as EnrichedTransaction;
       });
 
+      // Enrich the deposits with User Data safely
       const enrichedDeposits = (completedDepositsData || []).map((tx: any) => {
           const lookupId = tx.user_id ? tx.user_id.toString() : '';
           const match = userMap[lookupId];
@@ -132,7 +138,7 @@ export default function AdminDashboard() {
     const interval = setInterval(fetchDashboardData, 15000); 
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isUnlocked, timeScale]);
+  }, [isUnlocked]);
 
   const timeAgo = (dateStr: string) => {
     const diff = Math.floor((new Date().getTime() - new Date(dateStr).getTime()) / 60000);
@@ -152,19 +158,15 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🚀 DIRECT APPROVAL LOGIC
+  // 🚀 SECURE APPROVAL LOGIC
   const handleApprove = async (txId: string) => {
     if (!window.confirm("Mark this withdrawal as Approved and Paid?")) return;
     setProcessingTx(txId);
     try {
-        const { error } = await supabase
-            .from('transactions')
-            .update({ status: 'completed' })
-            .eq('id', txId);
+        const { error } = await supabase.rpc('admin_approve_withdrawal', { p_tx_id: txId });
             
         if (error) throw error;
         
-        // Instant visual update instead of waiting for next sync interval
         setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
         await fetchDashboardData();
     } catch (err) {
@@ -182,42 +184,16 @@ export default function AdminDashboard() {
     setProcessingTx(txId);
 
     try {
-        const numericUserId = isNaN(Number(userId)) ? null : Number(userId);
-        const searchId = numericUserId !== null ? numericUserId : userId;
+        const { error } = await supabase.rpc('admin_reject_withdrawal', {
+            p_tx_id: txId,
+            p_user_id: userId.toString(),
+            p_amount: amount
+        });
 
-        // 1. Fetch current user balance accurately
-        const { data: userData, error: userErr } = await supabase
-            .from('tg_users')
-            .select('balance')
-            .eq('tg_id', searchId)
-            .single();
-
-        if (userErr) throw userErr;
-        if (!userData) throw new Error(`User with Telegram ID ${userId} does not exist.`);
-
-        // 2. Process math explicitly
-        const currentBalance = Number(userData.balance) || 0;
-        const refundAmount = Number(amount) || 0;
-        const newBalance = currentBalance + refundAmount;
-
-        // 3. Update the user's balance safely
-        const { error: refundErr } = await supabase
-            .from('tg_users')
-            .update({ balance: newBalance })
-            .eq('tg_id', searchId);
-
-        if (refundErr) throw refundErr;
-
-        // 4. Mark transaction status as rejected
-        const { error: txErr } = await supabase
-            .from('transactions')
-            .update({ status: 'rejected' })
-            .eq('id', txId);
-
-        if (txErr) throw txErr;
+        if (error) throw error;
 
         setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
-        alert(`✅ Success! Refunded ${refundAmount} ETB back to user.`);
+        alert(`✅ Success! Refunded ${amount} ETB back to user.`);
         await fetchDashboardData();
 
     } catch (err) {
@@ -301,21 +277,12 @@ export default function AdminDashboard() {
           </div>
           <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1 bg-orange-500"></div>
-            <h3 className="text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-1">Active Servers</h3>
+            <h3 className="text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-1">Pending Withdrawals</h3>
             <div className="text-4xl font-black text-white flex items-baseline gap-1">
-              {macroStats?.active_rooms || '0'}
+              {macroStats?.pending_withdrawals_count || '0'}
             </div>
-            <p className="text-orange-400/60 text-[10px] mt-2 uppercase tracking-widest">Games playing or waiting</p>
+            <p className="text-orange-400/60 text-[10px] mt-2 uppercase tracking-widest">Awaiting Admin Action</p>
           </div>
-        </div>
-
-        {/* Time filters */}
-        <div className="flex gap-2 bg-neutral-900/40 p-1 rounded-xl border border-neutral-800/80 w-max">
-          {(['today', 'week', 'month', 'all'] as TimeScale[]).map((scale) => (
-            <button key={scale} onClick={() => setTimeScale(scale)} className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${timeScale === scale ? 'bg-emerald-500 text-black shadow-md' : 'text-neutral-400 hover:text-white'}`}>
-              {scale}
-            </button>
-          ))}
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
