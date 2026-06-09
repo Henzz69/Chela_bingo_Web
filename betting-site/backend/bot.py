@@ -50,7 +50,7 @@ VALID_MERCHANT_ACCOUNTS = [
 ]
 
 # ---------------------------------------------------------------------------
-# ADMIN AUTHORIZATION
+# ADMIN AUTHORIZATION & SECURITY LOCK
 # ---------------------------------------------------------------------------
 ADMIN_IDS = [5681654051]
 
@@ -59,14 +59,14 @@ def is_admin(message) -> bool:
     if getattr(message, 'from_user', None) and message.from_user.id in ADMIN_IDS:
         return True
     
-    # 2. Checks if you are sending anonymously as the Group/Channel
-    if getattr(message, 'sender_chat', None) and message.sender_chat.id == message.chat.id:
-        return True
-    
-    # 3. Checks for Telegram's universal "Anonymous Admin" ID
-    if getattr(message, 'from_user', None) and message.from_user.id == 1087968824:
-        return True
-        
+    # 2. VULNERABILITY PATCH: Only allow anonymous admin checks if it's ACTUALLY a group chat. 
+    # This prevents normal users from spoofing the sender_chat in private DMs.
+    if message.chat.type in ['group', 'supergroup']:
+        if getattr(message, 'sender_chat', None) and message.sender_chat.id == message.chat.id:
+            return True
+        if getattr(message, 'from_user', None) and message.from_user.id == 1087968824:
+            return True
+            
     return False
 
 if not BOT_TOKEN or BOT_TOKEN == "your_bot_token_here":
@@ -84,7 +84,6 @@ if SUPABASE_URL and SUPABASE_SERVICE_KEY:
         print(f"--- ERROR creating Supabase client: {e} ---")
         _supabase = None
 
-# 🚀 UPGRADED: Fetches Real, Promo, and the Generated Total Balance safely
 def _get_user_wallet(tg_id: int) -> tuple[float, float, float]:
     if _supabase is None:
         return 0.00, 0.00, 0.00
@@ -132,7 +131,7 @@ def _release_transaction(txn_id: str):
         print(f"Failed to release transaction lock: {e}")
 
 # ---------------------------------------------------------------------------
-# AUTO-TUNNEL (For Local Testing Only)
+# AUTO-TUNNEL
 # ---------------------------------------------------------------------------
 _tunnel_proc = None
 def _start_tunnel(port: int = 3000) -> str:
@@ -202,11 +201,7 @@ def get_lang(chat_id: int) -> str:
 def set_lang(chat_id: int, lang: str) -> None:
     user_lang[chat_id] = lang
 
-# ---------------------------------------------------------------------------
-# ROUTING CHECKER FOR CHATS & COMMAND MODULES
-# ---------------------------------------------------------------------------
 def can_execute_command(message, allow_group_admin=False) -> bool:
-    """Safely routes commands. Deletes public spam from regular users entirely."""
     if message.chat.type != "private":
         if allow_group_admin and is_admin(message):
             return True
@@ -218,7 +213,7 @@ def can_execute_command(message, allow_group_admin=False) -> bool:
     return True
 
 # ---------------------------------------------------------------------------
-# DICTIONARY FOR STRINGS (BILINGUAL)
+# STRINGS
 # ---------------------------------------------------------------------------
 STRINGS = {
     "en": {
@@ -254,7 +249,6 @@ STRINGS = {
         "support_msg": "🎧 *CHELA Bingo Support*\n\nNeed help with a deposit, withdrawal, or a game issue? Our team is here 24/7.\n\nContact us directly: @ChelaSupport",
         "locked_warning": "⚠️ Please complete or cancel your current action first.",
         "cancel_instruction": "⬇️ Press the Cancel button below to abort.",
-        
         "inst_telebirr": "Telebirr Account\n\n<code>0966617175</code>\n\n<blockquote>\n\nCheck if the name is HENOK.\n\n1. Send {} ETB to the Telebirr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from Telebirr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the Telebirr account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
         "inst_mpesa": "M-Pesa Account\n\n<code>0723191843</code>\n\n<blockquote>1. Send {} ETB to the M-Pesa account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from M-Pesa containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the M-Pesa account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nIf you face any payment problems\nYou can contact our agent here @ChelaSupport",
     },
@@ -291,7 +285,6 @@ STRINGS = {
         "support_msg": "🎧 *የቼላ ቢንጎ ድጋፍ ማዕከል*\n\nስለ ክፍያ፣ ገንዘብ ማውጣት ወይም ጨዋታ እርዳታ ይፈልጋሉ? ቡድናችን 24/7 ዝግጁ ነው።\n\nያነጋግሩን: @ChelaSupport",
         "locked_warning": "⚠️ እባክዎ መጀመሪያ አሁን የጀመሩትን ሂደት ያጠናቅቁ ወይም ይሰርዙ።",
         "cancel_instruction": "⬇️ ለማቋረጥ ከታች ያለውን የሰርዝ ቁልፍ ይጫኑ።",
-        
         "inst_telebirr": "የቴሌብር አካውንት\n\n<code>0966617175</code>\n\n<blockquote>1. Send {} ETB to the Telebirr account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from Telebirr containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the Telebirr account provided above. If you send money to an agent other than the one provided, a 2 penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
         "inst_mpesa": "የኤም-ፔሳ (M-Pesa) አካውንት\n\n<code>0723191843</code>\n\n<blockquote>1. Send {} ETB to the M-Pesa account above.\n\n2. Make sure the amount you send and the amount you requested here are exactly the same.\n\n3. After sending the money, you will receive a short text message (sms) from M-Pesa containing the payment details.\n\n4. Copy the ENTIRE short text message (sms) you received and paste it into the Telegram text box below to send it.\n\nNote: Because the agent the bot connects you to may change with each deposit, make sure to send money ONLY to the M-Pesa account provided above. If you send money to an agent other than the one provided, a 2% penalty will be applied.</blockquote>\n\nየሚያጋጥምዎ የክፍያ ችግር ካለ\n@ChelaSupport በዚህ ኤጀንታችን ማዋራት እና ማሳወቅ ይችላሉ",
     }
