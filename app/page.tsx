@@ -1,4 +1,4 @@
-export const dynamic = 'force-dynamic';
+'use client';
 
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -75,7 +75,7 @@ export default function AdminDashboard() {
 
       if (pendingErr) console.error("Error fetching pending txs:", pendingErr);
 
-      // 2. Fetch Completed Deposits Directly (Filtered by TimeScale to utilize the variable)
+      // 2. Fetch Completed Deposits Directly (Linked to TimeScale)
       const { data: completedDepositsData } = await supabase
           .from('transactions')
           .select('*')
