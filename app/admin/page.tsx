@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '@/lib/supabaseClient';
+import supabase from '@/lib/supabaseClient'; 
 
 // 🔒 THE MASTER PASSWORD VAULT
 const MASTER_PASSWORD = "chelahebenki2026";
@@ -29,11 +29,6 @@ interface AdminStats {
   active_rooms: number;
 }
 
-interface UserLookup {
-  display_name: string | null;
-  phone: string | null;
-}
-
 export default function AdminDashboard() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [passInput, setPassInput] = useState('');
@@ -48,7 +43,7 @@ export default function AdminDashboard() {
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [processingTx, setProcessingTx] = useState<string | null>(null);
 
-  // 📊 DIRECT SUPABASE FETCH ENGINE
+  // 📊 SECURE RPC FETCH ENGINE
   const fetchDashboardData = async () => {
     if (!isUnlocked) return;
     setIsLoadingData(true);
@@ -61,75 +56,22 @@ export default function AdminDashboard() {
     const isoStart = startDate.toISOString();
 
     try {
-      // Fetch Macro Stats safely
-      const { data: globalData, error: globalErr } = await supabase.rpc('get_admin_stats');
-      if (!globalErr && globalData) setMacroStats(globalData as AdminStats);
+      // 1. Fetch Top Stats
+      const { data: globalData } = await supabase.rpc('get_admin_stats');
+      if (globalData) setMacroStats(globalData as AdminStats);
 
-      // 1. Fetch Pending Withdrawals Directly
-      const { data: pendingWithdrawalsData, error: pendingErr } = await supabase
-          .from('transactions')
-          .select('*')
-          .eq('tx_type', 'withdrawal')
-          .eq('status', 'pending')
-          .order('created_at', { ascending: false });
-
-      if (pendingErr) console.error("Error fetching pending txs:", pendingErr);
-
-      // 2. Fetch Completed Deposits Directly (Linked to TimeScale)
-      const { data: completedDepositsData } = await supabase
-          .from('transactions')
-          .select('*')
-          .eq('tx_type', 'deposit')
-          .eq('status', 'completed')
-          .gte('created_at', isoStart)
-          .order('created_at', { ascending: false })
-          .limit(100);
-
-      // 3. Fetch User Details to map names and phones
-      const { data: usersData } = await supabase
-          .from('tg_users')
-          .select('tg_id, display_name, phone');
-
-      // Create a fast lookup map strictly typed to avoid Vercel build failures
-      const userMap: Record<string, UserLookup> = {};
-      if (usersData) {
-          usersData.forEach((user: any) => {
-              if (user.tg_id) {
-                userMap[user.tg_id.toString()] = {
-                  display_name: user.display_name,
-                  phone: user.phone
-                };
-              }
-          });
+      // 2. Fetch Secure Enriched Transactions
+      const { data: dashboardData, error } = await supabase.rpc('get_admin_dashboard_data', { p_start_date: isoStart });
+      
+      if (error) throw error;
+      
+      if (dashboardData) {
+          setPendingTxs(dashboardData.pending || []);
+          setRecentDeposits(dashboardData.recent || []);
       }
 
-      // Enrich the transactions with User Data safely
-      const enrichedWithdrawals = (pendingWithdrawalsData || []).map((tx: any) => {
-          const lookupId = tx.user_id ? tx.user_id.toString() : '';
-          const match = userMap[lookupId];
-          return {
-              ...tx,
-              display_name: match?.display_name || 'Unknown User',
-              phone: match?.phone || 'No Phone'
-          } as EnrichedTransaction;
-      });
-
-      const enrichedDeposits = (completedDepositsData || []).map((tx: any) => {
-          const lookupId = tx.user_id ? tx.user_id.toString() : '';
-          const match = userMap[lookupId];
-          return {
-              ...tx,
-              display_name: match?.display_name || 'Unknown User',
-              phone: match?.phone || 'No Phone'
-          } as EnrichedTransaction;
-      });
-
-      setPendingTxs(enrichedWithdrawals);
-      setRecentDeposits(enrichedDeposits);
-
     } catch (err) {
-      const error = err as Error;
-      console.error("Dashboard Sync Failed Entirely:", error.message);
+      console.error("Dashboard Sync Failed:", err);
     } finally {
       setIsLoadingData(false);
     }
@@ -139,7 +81,6 @@ export default function AdminDashboard() {
     fetchDashboardData();
     const interval = setInterval(fetchDashboardData, 15000); 
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isUnlocked, timeScale]);
 
   const timeAgo = (dateStr: string) => {
@@ -160,78 +101,45 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🚀 DIRECT APPROVAL LOGIC
+  // 🚀 SECURE APPROVAL LOGIC
   const handleApprove = async (txId: string) => {
     if (!window.confirm("Mark this withdrawal as Approved and Paid?")) return;
     setProcessingTx(txId);
     try {
-        const { error } = await supabase
-            .from('transactions')
-            .update({ status: 'completed' })
-            .eq('id', txId);
-            
+        const { error } = await supabase.rpc('admin_approve_withdrawal', { p_tx_id: txId });
         if (error) throw error;
         
-        // Instant visual update instead of waiting for next sync interval
         setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
         await fetchDashboardData();
     } catch (err) {
-        const error = err as Error;
-        console.error("Approval Failed:", error.message);
-        alert("Error approving transaction. Check network status.");
+        console.error("Approval Failed:", err);
+        alert("Error approving transaction.");
     } finally {
         setProcessingTx(null);
     }
   };
 
-  // 🚀 BULLETPROOF REJECT & FULL REFUND LOGIC
+  // 🚀 SECURE REJECT & FULL REFUND LOGIC
   const handleReject = async (txId: string, userId: string, amount: number) => {
     if (!window.confirm(`Are you sure you want to REJECT this transaction and REFUND ${amount} ETB to the user's wallet?`)) return;
     setProcessingTx(txId);
 
     try {
-        const numericUserId = isNaN(Number(userId)) ? null : Number(userId);
-        const searchId = numericUserId !== null ? numericUserId : userId;
+        const { error } = await supabase.rpc('admin_reject_withdrawal', { 
+            p_tx_id: txId, 
+            p_user_id: userId.toString(), 
+            p_amount: amount 
+        });
 
-        // 1. Fetch current user balance accurately
-        const { data: userData, error: userErr } = await supabase
-            .from('tg_users')
-            .select('balance')
-            .eq('tg_id', searchId)
-            .single();
-
-        if (userErr) throw userErr;
-        if (!userData) throw new Error(`User with Telegram ID ${userId} does not exist.`);
-
-        // 2. Process math explicitly
-        const currentBalance = Number(userData.balance) || 0;
-        const refundAmount = Number(amount) || 0;
-        const newBalance = currentBalance + refundAmount;
-
-        // 3. Update the user's balance safely
-        const { error: refundErr } = await supabase
-            .from('tg_users')
-            .update({ balance: newBalance })
-            .eq('tg_id', searchId);
-
-        if (refundErr) throw refundErr;
-
-        // 4. Mark transaction status as rejected
-        const { error: txErr } = await supabase
-            .from('transactions')
-            .update({ status: 'rejected' })
-            .eq('id', txId);
-
-        if (txErr) throw txErr;
+        if (error) throw error;
 
         setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
-        alert(`✅ Success! Refunded ${refundAmount} ETB back to user.`);
+        alert(`✅ Success! Refunded ${amount} ETB back to user.`);
         await fetchDashboardData();
 
     } catch (err) {
-        const error = err as Error;
-        console.error("CRITICAL COMMAND CANCELED:", error.message);
-        alert(`Failed to complete reject command.\n\nReason: ${error.message || 'Check database permissions.'}`);
+        console.error("Reject Failed:", err);
+        alert("Failed to complete reject command. Check database.");
     } finally {
         setProcessingTx(null);
     }
