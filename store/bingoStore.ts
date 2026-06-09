@@ -16,7 +16,7 @@ export interface BingoRoom {
   winner_id?: string | null;
   active_game_count?: number; 
   generation_seed?: string; 
-  // 🚀 FIX: Injected winner_name into the snapshot interface
+  // 🚀 INJECTED: winner_name is now safely typed in the snapshot
   winning_card_snapshot?: { grid: number[], daubed: number[], winner_name?: string };
 }
 

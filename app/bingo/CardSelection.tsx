@@ -1,438 +1,130 @@
-import { create } from 'zustand';
-import { supabase } from '@/lib/supabaseClient';
-import { generateDeterministicCard, checkWin } from '@/lib/bingoCards';
-import type { RealtimeChannel } from '@supabase/supabase-js';
+'use client';
 
-// 🛡️ THE NETWORK MUZZLE: Global timeout memory for debouncing cell taps
-let daubSyncTimeout: NodeJS.Timeout | null = null;
+import { motion, AnimatePresence } from 'framer-motion';
+import { useBingoStore } from '@/store/bingoStore';
 
-export interface BingoRoom {
-  id: string;
-  entry_fee: number;
-  max_players: number;
-  status: 'waiting' | 'countdown' | 'active' | 'finished';
-  drawn_numbers: number[];
-  winner_tg_id?: number | string | null;
-  winner_id?: string | null;
-  active_game_count?: number; 
-  generation_seed?: string; 
-  winning_card_snapshot?: { grid: number[], daubed: number[] };
+interface Props {
+  tgId: number;
 }
 
-export interface GameSession {
-  id: string;
-  room_id: string;
-  tg_id: number;
-  grid: number[]; 
-  daubed: number[];
-  card_index?: number;
-  status?: string; 
-}
+const SummaryBar = ({ label, value, colorClass }: { label: string; value: string; colorClass: string }) => (
+  <div className="bg-white dark:bg-[#0a4a2e]/80 border border-[#22C55E]/30 dark:border-white/10 rounded-xl flex-1 p-1.5 text-center shadow-sm dark:shadow-none transition-colors">
+    <div className={`${colorClass} font-black text-[11px]`}>{value}</div>
+    <div className="text-[8px] text-[#064E3B]/60 dark:text-white/40 uppercase tracking-wide">{label}</div>
+  </div>
+);
 
-interface BingoState {
-  theme: 'dark' | 'light';
-  toggleTheme: () => void;
+export default function BingoCardSelection({ tgId }: Props) {
+  // 🚀 FIX: Destructured 'rooms' directly from the store
+  const { 
+    currentRoom, selectedCardId, allCardGrids, takenCardIds, 
+    selectCardPreview, finalizeJoinWithCard, loadingRooms, 
+    error, clearError, theme, rooms 
+  } = useBingoStore();
 
-  isAutoMode: boolean;
-  toggleAutoMode: () => void;
+  if (!currentRoom) return null;
+  const currentPreviewGrid = selectedCardId ? allCardGrids[selectedCardId] : null;
 
-  screen: 'lobby' | 'select' | 'card-select' | 'game'; 
-  rooms: BingoRoom[];
-  loadingRooms: boolean;
-  error: string | null;
-
-  currentRoom: BingoRoom | null;
-  mySession: GameSession | null;
-  gameStatus: 'idle' | 'joining-lobby' | 'selecting' | 'active' | 'countdown' | 'finished' | 'waiting';
-  drawnNumbers: number[];
-  daubed: Set<number>;
-  winResult: { won: boolean; line?: number[] } | null;
-  winnerId: string | null;
-  payout: number | null;
-  
-  channel: RealtimeChannel | null;
-  cardsChannel: RealtimeChannel | null;
-
-  joiningSessionId: string | null; 
-  allCardGrids: Record<number, number[]>; 
-  selectedCardId: number | null; 
-  takenCardIds: Set<number>; 
-
-  isRecovering: boolean; 
-
-  fetchRooms: () => Promise<void>;
-  joinStakeRoom: (tgId: number, entryFee: number, maxPlayers: number) => Promise<void>;
-  generateAllCardsForRoom: (seed: string) => void;
-  selectCardPreview: (cardId: number) => void;
-  finalizeJoinWithCard: (tgId: number) => Promise<number | void>;
-  subscribeToRoomEvents: (roomId: string) => void;
-  claimBingo: (tgId: number) => Promise<number | void>;
-  daubCell: (cellIndex: number) => Promise<void>; 
-  leaveGame: () => void;
-  clearError: () => void;
-  recoverSession: (tgId: number) => Promise<void>; 
-}
-
-export const useBingoStore = create<BingoState>((set, get) => ({
-  theme: 'dark',
-  toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
-
-  isAutoMode: true,
-  toggleAutoMode: () => set((state) => ({ isAutoMode: !state.isAutoMode })),
-
-  screen: 'lobby',
-  rooms: [],
-  loadingRooms: false,
-  error: null,
-
-  currentRoom: null,
-  mySession: null,
-  gameStatus: 'idle',
-  drawnNumbers: [],
-  daubed: new Set([12]), 
-  winResult: null,
-  winnerId: null,
-  payout: null,
-  
-  channel: null,
-  cardsChannel: null,
-
-  joiningSessionId: null,
-  allCardGrids: {},
-  selectedCardId: null,
-  takenCardIds: new Set(),
-
-  isRecovering: true, 
-
-  fetchRooms: async () => {
-    set({ loadingRooms: true });
-    try {
-      const { data, error } = await supabase
-        .from('bingo_rooms')
-        .select('*') 
-        .in('status', ['waiting', 'active'])
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      set({ rooms: data ?? [], loadingRooms: false });
-    } catch (e: any) {
-      set({ error: e.message, loadingRooms: false });
-    }
-  },
-
-  joinStakeRoom: async (tgId: number, entryFee: number, maxPlayers: number) => {
-    set({ loadingRooms: true, error: null });
-    try {
-      const { data, error } = await supabase.rpc('bingo_join_or_create_lobby', {
-        p_tg_id: tgId,
-        p_fee: entryFee,
-        p_max_players: maxPlayers
-      });
-
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-
-      const { data: roomData, error: roomErr } = await supabase
-        .from('bingo_rooms')
-        .select('*')
-        .eq('id', data.room_id)
-        .single();
-        
-      if (roomErr) throw roomErr;
-
-      set({ 
-        joiningSessionId: data.session_id, 
-        currentRoom: roomData,
-        selectedCardId: null, 
-        takenCardIds: new Set(data.taken_ids || []), 
-        screen: 'card-select',
-        loadingRooms: false,
-      });
-
-      get().generateAllCardsForRoom(roomData.generation_seed || roomData.id);
-      get().subscribeToRoomEvents(roomData.id);
-
-    } catch (e: any) {
-      set({ error: e.message, loadingRooms: false });
-      throw e;
-    }
-  },
-
-  generateAllCardsForRoom: (seed: string) => {
-    const grids: Record<number, number[]> = {};
-    for (let i = 1; i <= 100; i++) {
-      grids[i] = generateDeterministicCard(seed, i);
-    }
-    set({ allCardGrids: grids });
-  },
-
-  selectCardPreview: (cardId: number) => {
-    if (get().takenCardIds.has(cardId)) return;
-    set({ selectedCardId: cardId });
-  },
-
-  finalizeJoinWithCard: async (tgId: number) => {
-    const { joiningSessionId, currentRoom, selectedCardId, allCardGrids } = get();
-    if (!joiningSessionId || !currentRoom || selectedCardId === null) return;
-
-    const gridToUse = allCardGrids[selectedCardId];
-    if (!gridToUse) return;
-
-    set({ loadingRooms: true });
-
-    try {
-      const { data, error } = await supabase.rpc('bingo_finalize_join', {
-        p_session_id: joiningSessionId,
-        p_card_index: selectedCardId,
-        p_card_grid: gridToUse
-      });
-
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-
-      set({
-        mySession: {
-          id: joiningSessionId,
-          room_id: currentRoom.id,
-          tg_id: tgId,
-          grid: gridToUse,
-          daubed: [12],
-          card_index: selectedCardId,
-          status: 'ready'
-        },
-        screen: 'game',
-        gameStatus: currentRoom.status,
-        loadingRooms: false,
-        joiningSessionId: null,
-        winResult: null 
-      });
-
-    } catch (e: any) {
-      set({ error: e.message, loadingRooms: false });
-      throw e;
-    }
-  },
-
-  subscribeToRoomEvents: (roomId: string) => {
-    const { channel, cardsChannel } = get();
-    if (channel) supabase.removeChannel(channel);
-    if (cardsChannel) supabase.removeChannel(cardsChannel);
-
-    const newChannel = supabase
-      .channel(`bingo-room-${roomId}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'bingo_rooms', filter: `id=eq.${roomId}`}, 
-        (payload) => {
-          const { gameStatus } = get();
-
-          if (gameStatus === 'finished') {
-            return;
-          }
-
-          const room = payload.new as BingoRoom; 
-          const drawn: number[] = room.drawn_numbers ?? [];
-          const { mySession, daubed } = get();
-
-          let currentWinResult = get().winResult;
-          if (mySession && mySession.grid) {
-            currentWinResult = checkWin(mySession.grid, daubed, new Set(drawn));
-          }
-
-          set({
-            currentRoom: room,
-            drawnNumbers: drawn,
-            gameStatus: room.status,
-            winnerId: room.winner_tg_id ? String(room.winner_tg_id) : room.winner_id,
-            winResult: currentWinResult
-          });
-        }
-      )
-      .subscribe();
-
-    const newCardsChannel = supabase
-      .channel(`bingo-cards-${roomId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bingo_cards', filter: `room_id=eq.${roomId}`}, 
-        (payload: any) => {
-          if (payload.new && payload.new.card_index !== null) {
-            set((state) => {
-              const updatedSet = new Set(state.takenCardIds);
-              updatedSet.add(payload.new.card_index);
-              return { takenCardIds: updatedSet };
-            });
-          }
-        }
-      )
-      .subscribe();
-
-    set({ channel: newChannel, cardsChannel: newCardsChannel });
-  },
-
-  daubCell: async (cellIndex: number) => {
-    const { mySession, drawnNumbers, currentRoom } = get();
-    if (!mySession || !currentRoom) return;
-
-    const num = mySession.grid[cellIndex];
-    if (num !== 0 && !drawnNumbers.includes(num)) return;
-
-    const newDaubed = new Set(get().daubed);
-    newDaubed.add(cellIndex);
-
-    const newWinResult = checkWin(mySession.grid, newDaubed, new Set(drawnNumbers));
-
-    // 🚀 1. INSTANT LOCAL UPDATE
-    set({ daubed: newDaubed, winResult: newWinResult });
-
-    // 🛡️ 2. THE NETWORK MUZZLE
-    if (daubSyncTimeout) {
-      clearTimeout(daubSyncTimeout);
-    }
-    
-    // 🚀 TURBO FIX: Reduced to 200ms to rapidly commit UI state to DB before claims
-    daubSyncTimeout = setTimeout(async () => {
-      try {
-        await supabase.rpc('bingo_daub_cell', {
-          p_session_id: mySession.id,
-          p_daubed: Array.from(newDaubed)
-        });
-      } catch (error) {
-        console.error("Failed to sync daub to secure server:", error);
-      }
-    }, 200); 
-  },
-
-  claimBingo: async (tgId: number) => {
-    const { mySession, currentRoom, takenCardIds } = get();
-    if (!mySession || !currentRoom) return;
-    
-    const activePlayers = takenCardIds.size > 0 ? takenCardIds.size : 2; 
-    const expectedPayout = (currentRoom.entry_fee * activePlayers) * 0.80;
-    
-    // Optimistic Lock
-    set({ 
-      gameStatus: 'finished', 
-      payout: expectedPayout,
-      winnerId: String(tgId),
-      error: null 
-    });
-
-    try {
-      const { data, error } = await supabase.rpc('bingo_claim_win', {
-        p_session_id: mySession.id,
-        p_room_id: currentRoom.id,
-        p_tg_id: tgId,
-        p_idem_key: `win-${mySession.id}` 
-      });
-
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-
-      if (data?.payout) set({ payout: data.payout });
+  return (
+    <div className={`w-full h-[100dvh] overflow-hidden bg-[#F0FDF4] dark:bg-[#042014] text-[#022C22] dark:text-white flex flex-col pt-safe transition-colors duration-500 ${theme === 'dark' ? 'dark' : ''}`}>
       
-      return data?.new_balance || 0; 
+      <nav className="shrink-0 bg-white dark:bg-[#0a4a2e] border-b border-[#22C55E]/20 dark:border-white/10 px-4 py-2 flex flex-col gap-2 transition-colors">
+        <div className="flex items-center gap-2">
+          <button onClick={() => useBingoStore.setState({ screen: 'select' })} className="text-[#064E3B]/70 dark:text-white/60 hover:text-[#022C22] dark:hover:text-white transition text-xs flex gap-1 items-center font-bold">
+            ← Back
+          </button>
+          <h1 className="text-lg font-extrabold text-green-500 dark:text-green-400 mx-auto pr-10">Select Card</h1>
+        </div>
+        
+        <div className="flex gap-2 w-full max-w-sm mx-auto">
+          {/* 🚀 FIX: Real-time platform Live Games counter utilizing local store memory */}
+          <SummaryBar label="LIVE GAMES" value={`${rooms.length}`} colorClass="text-orange-500 dark:text-orange-400" />
+          <SummaryBar label="STAKE" value={`${currentRoom.entry_fee} ETB`} colorClass="text-yellow-600 dark:text-yellow-400" />
+        </div>
+      </nav>
 
-    } catch (e: any) {
-      console.error("Claim Error:", e);
-      const errorMessage = e.message || "";
+      <main className="flex-1 min-h-0 p-2 flex flex-col gap-2 w-full max-w-md mx-auto">
+        <AnimatePresence>
+          {error && (
+            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="shrink-0 bg-red-100 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30 text-red-600 dark:text-red-400 px-3 py-1.5 rounded-lg flex gap-3 items-center text-xs">
+              {error}
+              <button onClick={clearError} className="ml-auto text-red-500 hover:text-red-700 dark:hover:text-white font-bold">×</button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-      if (errorMessage.includes('already been won')) {
-         set({ 
-           payout: null,
-           winnerId: null,
-           error: null 
-         });
-         return;
-      }
+        <div className="shrink-0 bg-white dark:bg-[#0a4a2e] border border-[#22C55E]/20 dark:border-white/10 rounded-xl p-2 shadow-sm dark:shadow-none transition-colors">
+          <div className="grid grid-cols-10 gap-[3px] aspect-square w-full">
+            {[...Array(100)].map((_, i) => {
+              const cardId = i + 1;
+              const isTaken = takenCardIds.has(cardId);
+              const isSelected = selectedCardId === cardId;
 
-      set({ 
-        error: errorMessage || "Server rejected claim.",
-        gameStatus: 'active',
-        payout: null,
-        winnerId: null
-      });
-      throw e;
-    }
-  },
+              return (
+                <motion.button
+                  key={cardId}
+                  whileTap={!isTaken ? { scale: 0.85 } : {}}
+                  onClick={() => selectCardPreview(cardId)}
+                  disabled={isTaken}
+                  className={`
+                    aspect-square rounded-[4px] text-[10px] sm:text-[11px] font-black flex items-center justify-center transition-all duration-200 select-none
+                    ${isSelected
+                      ? 'bg-green-500 text-white shadow-[0_0_12px_rgba(34,197,94,0.8)] scale-110 z-20'
+                      : isTaken
+                        ? 'bg-orange-100 dark:bg-orange-500/20 border border-orange-300 dark:border-orange-500/50 text-orange-500 dark:text-orange-400 shadow-[0_0_8px_rgba(249,115,22,0.2)] z-10 cursor-not-allowed'
+                        : 'bg-[#DCFCE7] dark:bg-[#063320] text-[#064E3B] dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-500/30'
+                    }
+                  `}
+                >
+                  {cardId}
+                </motion.button>
+              );
+            })}
+          </div>
+        </div>
 
-  leaveGame: () => {
-    const { channel, cardsChannel } = get();
-    if (channel) supabase.removeChannel(channel);
-    if (cardsChannel) supabase.removeChannel(cardsChannel);
-    
-    set({
-      screen: 'lobby', currentRoom: null, mySession: null, drawnNumbers: [],
-      daubed: new Set([12]), winResult: null, gameStatus: 'idle',
-      winnerId: null, payout: null, channel: null, cardsChannel: null,
-      joiningSessionId: null, allCardGrids: {}, selectedCardId: null, takenCardIds: new Set()
-    });
-  },
+        <div className="flex-1 min-h-0 flex flex-col justify-center items-center py-2 relative w-full">
+          <AnimatePresence mode="wait">
+            {selectedCardId && currentPreviewGrid ? (
+              <motion.div key={selectedCardId} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} 
+                className="w-full max-w-[240px] max-h-full aspect-square flex flex-col bg-white rounded-xl p-2 shadow-2xl border border-gray-100 dark:border-none relative"
+              >
+                <div className="absolute -top-5 left-0 w-full text-center font-bold text-[#064E3B]/50 dark:text-white/50 text-[10px] uppercase tracking-widest">
+                  BOARD #{selectedCardId} PREVIEW
+                </div>
+                <div className="grid grid-cols-5 gap-1 mb-1">
+                  {['B', 'I', 'N', 'G', 'O'].map(col => <div key={col} className="text-center font-black text-sm text-black">{col}</div>)}
+                </div>
+                <div className="grid grid-cols-5 gap-1 flex-1 min-h-0">
+                  {currentPreviewGrid.map((num: number, idx: number) => {
+                    const isFree = idx === 12;
+                    return (
+                      <div key={idx} className={`w-full h-full rounded-[4px] flex items-center justify-center font-black transition-all ${isFree ? 'bg-orange-100 text-orange-500' : 'bg-slate-100 text-black' } `}>
+                        {isFree ? <span className="text-orange-500 text-sm">★</span> : <span className="text-xs sm:text-sm">{num}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full h-full flex flex-col items-center justify-center text-[#064E3B]/40 dark:text-white/30 text-[11px] font-bold uppercase tracking-widest text-center px-4">
+                Tap an available card above<br/>to preview your board
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
-  clearError: () => set({ error: null }),
-
-  recoverSession: async (tgId: number) => {
-    try {
-      const { data, error } = await supabase.rpc('bingo_recover_session', { p_tg_id: tgId });
-
-      if (error) throw error;
-
-      if (data && data.found) {
-        const room = data.room as BingoRoom;
-        const card = data.card as GameSession;
-
-        if (room.status === 'finished') {
-          set({ isRecovering: false, screen: 'lobby' });
-          return;
-        }
-
-        get().generateAllCardsForRoom(room.generation_seed || room.id);
-        get().subscribeToRoomEvents(room.id);
-
-        if (card.status === 'joining') {
-          const { data: takenData } = await supabase
-            .from('bingo_cards')
-            .select('card_index')
-            .eq('room_id', room.id)
-            .not('card_index', 'is', null);
-            
-          const taken = new Set((takenData || []).map(t => t.card_index));
-
-          set({
-            currentRoom: room,
-            joiningSessionId: card.id,
-            takenCardIds: taken,
-            screen: 'card-select',
-            isRecovering: false
-          });
-
-        } else if (card.status === 'ready' || card.status === 'active') {
-          const { data: activePlayersData } = await supabase
-            .from('bingo_cards')
-            .select('card_index')
-            .eq('room_id', room.id)
-            .not('card_index', 'is', null);
-
-          const activePlayersSet = new Set((activePlayersData || []).map(t => t.card_index));
-
-          const currentDaubed = new Set(card.daubed || [12]);
-          const drawnList = room.drawn_numbers || [];
-          const winResult = checkWin(card.grid, currentDaubed, new Set(drawnList));
-
-          set({
-            currentRoom: room,
-            mySession: card,
-            drawnNumbers: drawnList,
-            daubed: currentDaubed,
-            gameStatus: room.status,
-            winResult: winResult,
-            screen: 'game',
-            takenCardIds: activePlayersSet, 
-            isRecovering: false
-          });
-        }
-      } else {
-        set({ isRecovering: false, screen: 'lobby' });
-      }
-    } catch (e: any) {
-      console.error("Failed to recover session:", e.message || JSON.stringify(e));
-      set({ isRecovering: false, screen: 'lobby' });
-    }
-  },
-}));
+        <div className="shrink-0 pb-safe pb-2">
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            onClick={() => finalizeJoinWithCard(tgId)}
+            disabled={selectedCardId === null || loadingRooms}
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-green-600 text-white font-black text-lg shadow-[0_4px_15px_rgba(34,197,94,0.3)] disabled:opacity-50 disabled:from-gray-400 disabled:to-gray-500 dark:disabled:from-gray-600 dark:disabled:to-gray-700 disabled:shadow-none transition-all flex items-center justify-center h-14"
+          >
+            {loadingRooms ? <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : 'START GAME'}
+          </motion.button>
+        </div>
+      </main>
+    </div>
+  );
+}

@@ -336,7 +336,7 @@ export default function BingoGameBoard({ tgId }: Props) {
                   <div className="text-4xl mb-3 opacity-50">💀</div>
                   <h2 className="text-xl font-black text-[#022C22]/80 dark:text-white/80 mb-1">Game Over</h2>
                   
-                  {/* 🚀 NEW: Dynamic Winner Announcement */}
+                  {/* 🚀 THE WINNER ANNOUNCEMENT */}
                   {currentRoom?.winning_card_snapshot?.winner_name ? (
                     <p className="text-[#064E3B]/80 dark:text-white/70 mb-6 text-sm px-2 font-bold">
                       <span className="text-orange-500 dark:text-orange-400 font-black text-base">{currentRoom.winning_card_snapshot.winner_name}</span> took the pot!
