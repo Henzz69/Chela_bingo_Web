@@ -1,4 +1,4 @@
-'use client';
+export const dynamic = 'force-dynamic';
 
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -34,6 +34,11 @@ interface AdminStats {
   total_profit: number;
   total_wallets: number;
   active_rooms: number;
+}
+
+interface UserLookup {
+  display_name: string | null;
+  phone: string | null;
 }
 
 export default function AdminDashboard() {
@@ -92,12 +97,15 @@ export default function AdminDashboard() {
           .from('tg_users')
           .select('tg_id, display_name, phone');
 
-      // Create a fast lookup map using both string and numeric representations to prevent parsing drops
-      const userMap: Record<string, any> = {};
+      // Create a fast lookup map strictly typed to avoid Vercel build failures
+      const userMap: Record<string, UserLookup> = {};
       if (usersData) {
           usersData.forEach(user => {
               if (user.tg_id) {
-                userMap[user.tg_id.toString()] = user;
+                userMap[user.tg_id.toString()] = {
+                  display_name: user.display_name,
+                  phone: user.phone
+                };
               }
           });
       }
@@ -213,28 +221,18 @@ export default function AdminDashboard() {
     setProcessingTx(txId);
 
     try {
-        // Try to target both biging numeric parse formats
         const numericUserId = isNaN(Number(userId)) ? null : Number(userId);
+        const searchId = numericUserId !== null ? numericUserId : userId;
 
-        // 1. Fetch current user balance accurately matching cross-types
-        let userQuery = supabase.from('tg_users').select('balance');
-        
-        if (numericUserId !== null) {
-            userQuery = userQuery.eq('tg_id', numericUserId);
-        } else {
-            userQuery = userQuery.eq('tg_id', userId);
-        }
+        // 1. Fetch current user balance accurately
+        const { data: userData, error: userErr } = await supabase
+            .from('tg_users')
+            .select('balance')
+            .eq('tg_id', searchId)
+            .single();
 
-        const { data: userData, error: userErr } = await userQuery.maybeSingle();
-
-        if (userErr) {
-            console.error("Supabase user retrieval error:", userErr);
-            throw userErr;
-        }
-
-        if (!userData) {
-            throw new Error(`User with Telegram ID ${userId} does not exist in the tg_users database table.`);
-        }
+        if (userErr) throw userErr;
+        if (!userData) throw new Error(`User with Telegram ID ${userId} does not exist.`);
 
         // 2. Process math explicitly
         const currentBalance = Number(userData.balance) || 0;
@@ -242,18 +240,12 @@ export default function AdminDashboard() {
         const newBalance = currentBalance + refundAmount;
 
         // 3. Update the user's balance safely
-        let updateQuery = supabase.from('tg_users').update({ balance: newBalance });
-        if (numericUserId !== null) {
-            updateQuery = updateQuery.eq('tg_id', numericUserId);
-        } else {
-            updateQuery = updateQuery.eq('tg_id', userId);
-        }
+        const { error: refundErr } = await supabase
+            .from('tg_users')
+            .update({ balance: newBalance })
+            .eq('tg_id', searchId);
 
-        const { error: refundErr } = await updateQuery;
-        if (refundErr) {
-            console.error("Balance refund database rejection:", refundErr);
-            throw refundErr;
-        }
+        if (refundErr) throw refundErr;
 
         // 4. Mark transaction status as rejected
         const { error: txErr } = await supabase
@@ -261,21 +253,19 @@ export default function AdminDashboard() {
             .update({ status: 'rejected' })
             .eq('id', txId);
 
-        if (txErr) {
-            console.error("Transaction status swap failure:", txErr);
-            throw txErr;
-        }
+        if (txErr) throw txErr;
 
         // 5. Instantly flash the local state matrix so user experiences structural feedback
         setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
-        alert(`✅ Success! Refunded ${refundAmount} ETB back to user ${userId}.`);
+        alert(`✅ Success! Refunded ${refundAmount} ETB back to user.`);
         
         // Force background verification sync loop
         await fetchDashboardData();
 
-    } catch (err: any) {
-        console.error("CRITICAL COMMAND CANCELED:", err);
-        alert(`Failed to complete reject command.\n\nReason: ${err?.message || 'Check database permissions or RLS policies.'}`);
+    } catch (err) {
+        const error = err as Error;
+        console.error("CRITICAL COMMAND CANCELED:", error);
+        alert(`Failed to complete reject command.\n\nReason: ${error.message || 'Check database permissions.'}`);
     } finally {
         setProcessingTx(null);
     }
