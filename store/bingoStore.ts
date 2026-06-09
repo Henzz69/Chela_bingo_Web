@@ -16,7 +16,8 @@ export interface BingoRoom {
   winner_id?: string | null;
   active_game_count?: number; 
   generation_seed?: string; 
-  winning_card_snapshot?: { grid: number[], daubed: number[] };
+  // 🚀 FIX: Injected winner_name into the snapshot interface
+  winning_card_snapshot?: { grid: number[], daubed: number[], winner_name?: string };
 }
 
 export interface GameSession {
@@ -278,15 +279,12 @@ export const useBingoStore = create<BingoState>((set, get) => ({
 
     const newWinResult = checkWin(mySession.grid, newDaubed, new Set(drawnNumbers));
 
-    // 🚀 1. INSTANT LOCAL UPDATE
     set({ daubed: newDaubed, winResult: newWinResult });
 
-    // 🛡️ 2. THE NETWORK MUZZLE
     if (daubSyncTimeout) {
       clearTimeout(daubSyncTimeout);
     }
     
-    // 🚀 TURBO FIX: Reduced to 200ms to rapidly commit UI state to DB before claims
     daubSyncTimeout = setTimeout(async () => {
       try {
         await supabase.rpc('bingo_daub_cell', {
@@ -306,7 +304,6 @@ export const useBingoStore = create<BingoState>((set, get) => ({
     const activePlayers = takenCardIds.size > 0 ? takenCardIds.size : 2; 
     const expectedPayout = (currentRoom.entry_fee * activePlayers) * 0.80;
     
-    // Optimistic Lock
     set({ 
       gameStatus: 'finished', 
       payout: expectedPayout,
