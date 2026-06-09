@@ -51,7 +51,7 @@ export default function AdminDashboard() {
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [processingTx, setProcessingTx] = useState<string | null>(null);
 
-  // 📊 THE HYBRID ANALYTICS ENGINE
+  // 📊 DIRECT SUPABASE FETCH ENGINE (Bypasses old RPCs to guarantee new column data)
   useEffect(() => {
     if (!isUnlocked) return; 
 
@@ -70,15 +70,54 @@ export default function AdminDashboard() {
         const { data: globalData } = await supabase.rpc('get_admin_stats');
         if (globalData) setMacroStats(globalData as AdminStats);
 
-        // Fetch Secure Enriched Transactions (Bypasses RLS)
-        const { data: txDataRpc } = await supabase.rpc('get_admin_transactions');
-        if (txDataRpc) {
-          setPendingTxs(txDataRpc.pending_withdrawals || []);
-          setRecentDeposits(txDataRpc.recent_deposits || []);
+        // 1. Fetch Pending Withdrawals Directly (Includes new bank columns)
+        const { data: pendingWithdrawalsData } = await supabase
+            .from('transactions')
+            .select('*')
+            .eq('tx_type', 'withdrawal')
+            .eq('status', 'pending')
+            .order('created_at', { ascending: false });
+
+        // 2. Fetch Completed Deposits Directly
+        const { data: completedDepositsData } = await supabase
+            .from('transactions')
+            .select('*')
+            .eq('tx_type', 'deposit')
+            .eq('status', 'completed')
+            .order('created_at', { ascending: false })
+            .limit(100);
+
+        // 3. Fetch User Details to map names and phones
+        const { data: usersData } = await supabase
+            .from('tg_users')
+            .select('tg_id, display_name, phone');
+
+        // Create a fast lookup map for users
+        const userMap: Record<string, any> = {};
+        if (usersData) {
+            usersData.forEach(user => {
+                userMap[user.tg_id] = user;
+            });
         }
 
+        // Enrich the transactions with User Data
+        const enrichedWithdrawals = (pendingWithdrawalsData || []).map(tx => ({
+            ...tx,
+            display_name: userMap[tx.user_id]?.display_name || 'Unknown User',
+            phone: userMap[tx.user_id]?.phone || 'No Phone'
+        }));
+
+        const enrichedDeposits = (completedDepositsData || []).map(tx => ({
+            ...tx,
+            display_name: userMap[tx.user_id]?.display_name || 'Unknown User',
+            phone: userMap[tx.user_id]?.phone || 'No Phone'
+        }));
+
+        setPendingTxs(enrichedWithdrawals);
+        setRecentDeposits(enrichedDeposits);
+
         // Fetch Time-Scaled Metrics
-        const { data: txData } = await supabase
+        const { data: timeScaleTxData } = await supabase
           .from('transactions')
           .select('amount, tx_type')
           .gte('created_at', isoStart)
@@ -92,7 +131,7 @@ export default function AdminDashboard() {
         let deposits = 0;
         let withdrawals = 0;
 
-        txData?.forEach(tx => {
+        timeScaleTxData?.forEach(tx => {
           if (tx.tx_type === 'deposit') deposits += Number(tx.amount);
           if (tx.tx_type === 'withdrawal') withdrawals += Number(tx.amount);
         });
@@ -134,24 +173,72 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🚀 SECURE ACTION HANDLERS
+  // 🚀 DIRECT APPROVAL LOGIC
   const handleApprove = async (txId: string) => {
+    if (!window.confirm("Mark this withdrawal as Approved and Paid?")) return;
     setProcessingTx(txId);
-    await supabase.rpc('admin_approve_withdrawal', { p_tx_id: txId });
-    setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
-    setProcessingTx(null);
+    try {
+        const { error } = await supabase
+            .from('transactions')
+            .update({ status: 'completed' })
+            .eq('id', txId);
+            
+        if (error) throw error;
+        setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
+    } catch (err) {
+        console.error("Approval Failed:", err);
+        alert("Error approving transaction.");
+    } finally {
+        setProcessingTx(null);
+    }
   };
 
+  // 🚀 DIRECT REJECT & FULL REFUND LOGIC
   const handleReject = async (txId: string, userId: string, amount: number) => {
-    if (!window.confirm("Reject this withdrawal and refund the user's wallet?")) return;
+    if (!window.confirm(`Are you sure you want to REJECT this transaction and REFUND ${amount} ETB to the user's wallet?`)) return;
     setProcessingTx(txId);
-    await supabase.rpc('admin_reject_withdrawal', {
-        p_tx_id: txId,
-        p_user_id: userId,
-        p_amount: amount
-    });
-    setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
-    setProcessingTx(null);
+
+    try {
+        // 1. Fetch current user balance securely
+        const { data: userData, error: userErr } = await supabase
+            .from('tg_users')
+            .select('balance')
+            .eq('tg_id', userId)
+            .single();
+
+        if (userErr) throw userErr;
+
+        // 2. Calculate newly refunded balance
+        const currentBalance = Number(userData.balance) || 0;
+        const refundAmount = Number(amount) || 0;
+        const newBalance = currentBalance + refundAmount;
+
+        // 3. Update the user's balance
+        const { error: refundErr } = await supabase
+            .from('tg_users')
+            .update({ balance: newBalance })
+            .eq('tg_id', userId);
+
+        if (refundErr) throw refundErr;
+
+        // 4. Mark transaction as rejected
+        const { error: txErr } = await supabase
+            .from('transactions')
+            .update({ status: 'rejected' })
+            .eq('id', txId);
+
+        if (txErr) throw txErr;
+
+        // 5. Update local state
+        setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
+        alert(`✅ Success! Refunded ${refundAmount} ETB back to the user.`);
+
+    } catch (err) {
+        console.error("Reject and Refund Failed:", err);
+        alert("Failed to refund the user. Please check your Supabase permissions.");
+    } finally {
+        setProcessingTx(null);
+    }
   };
 
   if (!isUnlocked) {
@@ -232,80 +319,98 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
           
-          {/* ⚡ WITHDRAWALS: Action Queue */}
-          <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg flex flex-col h-[600px]">
+          {/* ⚡ WITHDRAWALS: Detailed Action Queue */}
+          <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg flex flex-col h-[700px]">
             <div className="bg-neutral-900 border-b border-neutral-800 px-6 py-4 flex justify-between items-center shrink-0">
               <h2 className="text-lg font-black tracking-widest text-white flex items-center gap-2">
-                <span className="text-yellow-500">📤</span> WITHDRAWALS
+                <span className="text-yellow-500">📤</span> WITHDRAWAL REQUESTS
               </h2>
-              <span className="bg-yellow-500/10 text-yellow-500 text-[10px] font-bold px-2 py-1 rounded border border-yellow-500/20 uppercase">
-                {pendingTxs.length} Pending
+              <span className="bg-yellow-500/10 text-yellow-500 text-[10px] font-bold px-3 py-1.5 rounded border border-yellow-500/20 uppercase shadow-[0_0_10px_rgba(234,179,8,0.2)]">
+                {pendingTxs.length} Pending Action
               </span>
             </div>
             
-            <div className="overflow-y-auto flex-1 p-4 space-y-4 custom-scrollbar">
+            <div className="overflow-y-auto flex-1 p-4 md:p-6 space-y-6 custom-scrollbar bg-[#0a0a0a]">
               {pendingTxs.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-neutral-500 text-sm font-medium">All queues clear. No pending requests.</div>
+                <div className="flex flex-col items-center justify-center h-full text-neutral-500">
+                    <span className="text-4xl mb-2 opacity-50">☕</span>
+                    <span className="text-sm font-medium tracking-widest uppercase">All queues clear</span>
+                </div>
               ) : (
                 <AnimatePresence>
                   {pendingTxs.map((tx) => (
-                    <motion.div key={tx.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -10 }} 
-                      className="bg-neutral-950 border border-neutral-800 p-4 rounded-xl flex flex-col gap-4 relative overflow-hidden shadow-md"
+                    <motion.div key={tx.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, x: -50 }} 
+                      className="bg-neutral-950 border border-neutral-800 rounded-xl flex flex-col relative overflow-hidden shadow-xl"
                     >
-                      <div className="absolute left-0 top-0 w-1 h-full bg-orange-500/50"></div>
+                      {/* Accent Strip */}
+                      <div className="absolute left-0 top-0 w-1.5 h-full bg-gradient-to-b from-orange-400 to-yellow-600 shadow-[0_0_15px_rgba(249,115,22,0.5)]"></div>
                       
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-neutral-800/50 pb-3">
+                      {/* Top Bar: Amount & Meta */}
+                      <div className="flex items-center justify-between p-4 border-b border-neutral-800/80 bg-neutral-900/50">
                         <div className="flex items-center gap-3">
-                          <span className="text-orange-400 font-black text-2xl">{tx.amount.toLocaleString()} ETB</span>
-                          <span className="bg-neutral-900 text-neutral-400 text-[10px] tracking-widest uppercase px-2 py-1 rounded-md">{timeAgo(tx.created_at)}</span>
+                          <span className="text-orange-400 font-black text-3xl drop-shadow-md">{tx.amount.toLocaleString()} ETB</span>
                         </div>
-                        <div className="text-[10px] text-neutral-500 font-mono">
-                          ID: {tx.user_id}
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-neutral-500 text-[10px] uppercase tracking-widest w-16">Player:</span>
-                            <span className="font-bold text-white text-sm">{tx.display_name || 'Unknown'}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-neutral-500 text-[10px] uppercase tracking-widest w-16">Phone:</span>
-                            <span className="text-blue-400 font-mono text-xs">{tx.phone || 'N/A'}</span>
-                          </div>
-                        </div>
-
-                        <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-3 space-y-2 shadow-inner">
-                          <div className="flex items-center gap-2">
-                            <span className="text-emerald-500/70 text-[10px] uppercase tracking-widest w-16">Bank:</span>
-                            <span className="font-bold text-emerald-400 text-xs">{tx.bank_name || 'Not provided'}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-emerald-500/70 text-[10px] uppercase tracking-widest w-16">Name:</span>
-                            <span className="font-bold text-white text-xs">{tx.account_name || 'Not provided'}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-emerald-500/70 text-[10px] uppercase tracking-widest w-16">Account:</span>
-                            <span className="text-white font-mono bg-black px-1.5 py-0.5 rounded text-xs select-all">{tx.account_number || 'Not provided'}</span>
-                          </div>
+                        <div className="flex flex-col items-end">
+                            <span className="text-[10px] text-neutral-400 tracking-widest uppercase font-bold">{timeAgo(tx.created_at)}</span>
+                            <span className="text-[9px] text-neutral-600 font-mono mt-1">TX: {tx.id.split('-')[0]}</span>
                         </div>
                       </div>
 
-                      <div className="flex gap-2 w-full pt-2 border-t border-neutral-800/50">
+                      {/* Main Content Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-0">
+                        
+                        {/* Left Column: Player Identity */}
+                        <div className="p-4 border-b sm:border-b-0 sm:border-r border-neutral-800/80 space-y-3 bg-neutral-950">
+                          <div>
+                            <p className="text-neutral-600 text-[9px] font-black uppercase tracking-widest mb-1">Player Identity</p>
+                            <p className="font-bold text-white text-sm">{tx.display_name || 'Unknown'}</p>
+                          </div>
+                          <div>
+                            <p className="text-neutral-600 text-[9px] font-black uppercase tracking-widest mb-1">Phone Link</p>
+                            <p className="text-blue-400 font-mono text-xs bg-blue-500/10 inline-block px-2 py-1 rounded border border-blue-500/20">{tx.phone || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-neutral-600 text-[9px] font-black uppercase tracking-widest mb-1">Telegram UID</p>
+                            <p className="text-neutral-500 font-mono text-[10px]">{tx.user_id}</p>
+                          </div>
+                        </div>
+
+                        {/* Right Column: Banking Details (The new feature!) */}
+                        <div className="p-4 space-y-3 bg-neutral-900/20">
+                            <div>
+                                <p className="text-emerald-500/70 text-[9px] font-black uppercase tracking-widest mb-1">Target Bank</p>
+                                <p className="font-bold text-emerald-400 text-sm">{tx.bank_name || 'Not Provided'}</p>
+                            </div>
+                            <div>
+                                <p className="text-emerald-500/70 text-[9px] font-black uppercase tracking-widest mb-1">Account Name</p>
+                                <p className="font-bold text-white text-xs">{tx.account_name || 'Not Provided'}</p>
+                            </div>
+                            <div>
+                                <p className="text-emerald-500/70 text-[9px] font-black uppercase tracking-widest mb-1">Account Number (Select to copy)</p>
+                                <p className="text-emerald-300 font-mono text-sm bg-black px-3 py-1.5 rounded border border-emerald-500/30 select-all tracking-wider shadow-inner block w-max">
+                                    {tx.account_number || 'N/A'}
+                                </p>
+                            </div>
+                        </div>
+                      </div>
+
+                      {/* Action Buttons Footer */}
+                      <div className="p-4 bg-neutral-900 border-t border-neutral-800">
                         {processingTx === tx.id ? (
-                          <div className="w-full text-center text-xs text-emerald-500 font-bold animate-pulse py-2 bg-emerald-500/10 rounded border border-emerald-500/20">Processing Transaction...</div>
+                          <div className="w-full text-center text-xs text-orange-400 font-bold animate-pulse py-3 bg-orange-500/10 rounded-lg border border-orange-500/20 tracking-widest uppercase">
+                            Executing Database Command...
+                          </div>
                         ) : (
-                          <>
-                            <button onClick={() => handleApprove(tx.id)} className="flex-1 py-3 rounded-lg bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 hover:bg-emerald-500 hover:text-black transition-all font-black text-[11px] uppercase tracking-widest shadow-[0_0_10px_rgba(16,185,129,0.1)]">
-                              Approve Payment
-                            </button>
-                            <button onClick={() => handleReject(tx.id, tx.user_id, tx.amount)} className="flex-1 py-3 rounded-lg bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition-all font-black text-[11px] uppercase tracking-widest shadow-[0_0_10px_rgba(239,68,68,0.1)]">
+                          <div className="flex gap-3">
+                            <button onClick={() => handleReject(tx.id, tx.user_id, tx.amount)} className="flex-1 py-3 rounded-lg bg-[#1a0505] text-red-500 border border-red-900 hover:bg-red-500 hover:text-white transition-all font-black text-[11px] uppercase tracking-widest">
                               Reject & Refund
                             </button>
-                          </>
+                            <button onClick={() => handleApprove(tx.id)} className="flex-[2] py-3 rounded-lg bg-emerald-500 text-black border border-emerald-400 hover:bg-emerald-400 transition-all font-black text-[11px] uppercase tracking-widest shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+                              Mark as Paid
+                            </button>
+                          </div>
                         )}
                       </div>
                     </motion.div>
@@ -315,32 +420,44 @@ export default function AdminDashboard() {
             </div>
           </section>
 
-          {/* 📥 DEPOSITS: Settled Ledger */}
-          <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg flex flex-col h-[600px]">
+          {/* 📥 DEPOSITS: Detailed Settled Ledger */}
+          <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg flex flex-col h-[700px]">
             <div className="bg-neutral-900 border-b border-neutral-800 px-6 py-4 flex justify-between items-center shrink-0">
               <h2 className="text-lg font-black tracking-widest text-white flex items-center gap-2">
-                <span className="text-emerald-500">📥</span> DEPOSIT LEDGER
+                <span className="text-emerald-500">📥</span> SUCCESSFUL DEPOSITS
               </h2>
-              <span className="bg-emerald-500/10 text-emerald-500 text-[10px] font-bold px-2 py-1 rounded border border-emerald-500/20 uppercase">
+              <span className="bg-emerald-500/10 text-emerald-500 text-[10px] font-bold px-3 py-1.5 rounded border border-emerald-500/20 uppercase shadow-[0_0_10px_rgba(16,185,129,0.2)]">
                 Last 100
               </span>
             </div>
             
-            <div className="overflow-y-auto flex-1 p-4 space-y-3 custom-scrollbar">
+            <div className="overflow-y-auto flex-1 p-4 md:p-6 space-y-4 custom-scrollbar bg-[#0a0a0a]">
               {recentDeposits.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-neutral-500 text-sm font-medium">No recent deposit activity.</div>
+                <div className="flex flex-col items-center justify-center h-full text-neutral-500">
+                    <span className="text-4xl mb-2 opacity-50">📭</span>
+                    <span className="text-sm font-medium tracking-widest uppercase">No recent deposits</span>
+                </div>
               ) : (
                 recentDeposits.map((tx) => (
-                  <div key={tx.id} className="bg-neutral-950/50 border border-neutral-800/50 p-3 rounded-lg flex items-center justify-between hover:border-neutral-700 transition-colors">
-                    <div>
-                        <div className="text-emerald-400 font-bold text-sm">+{tx.amount.toLocaleString()} ETB</div>
-                      <div className="text-[10px] text-neutral-500 truncate max-w-[150px] sm:max-w-[200px] mt-0.5">
-                        {tx.display_name || tx.user_id}
+                  <div key={tx.id} className="bg-neutral-950 border border-neutral-800/80 p-4 rounded-xl flex flex-col gap-3 hover:border-emerald-500/40 transition-colors relative overflow-hidden group">
+                    <div className="absolute left-0 top-0 w-1 h-full bg-emerald-500/30 group-hover:bg-emerald-500 transition-colors"></div>
+                    
+                    <div className="flex items-center justify-between border-b border-neutral-800/50 pb-2">
+                      <div className="text-emerald-400 font-black text-xl drop-shadow-sm">+{tx.amount.toLocaleString()} ETB</div>
+                      <div className="text-right flex flex-col items-end">
+                        <div className="text-[10px] text-neutral-400 tracking-widest uppercase font-bold">{timeAgo(tx.created_at)}</div>
+                        <div className="text-[9px] text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded mt-1 font-black tracking-widest border border-emerald-500/20">API AUTOMATED</div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-[10px] text-neutral-400 tracking-widest uppercase">{timeAgo(tx.created_at)}</div>
-                      <div className="text-[9px] text-emerald-500/50 uppercase mt-0.5 font-bold tracking-widest">Automated</div>
+                    
+                    <div className="flex items-end justify-between">
+                       <div className="flex flex-col">
+                           <span className="text-neutral-500 text-[9px] font-black uppercase tracking-widest mb-0.5">Credited To</span>
+                           <span className="text-sm text-white font-bold">{tx.display_name || tx.user_id}</span>
+                       </div>
+                       <div className="text-xs font-mono text-blue-400 bg-blue-500/10 px-2 py-1 rounded border border-blue-500/20">
+                           {tx.phone || 'No Phone Linked'}
+                       </div>
                     </div>
                   </div>
                 ))
