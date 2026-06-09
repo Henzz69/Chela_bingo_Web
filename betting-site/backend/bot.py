@@ -433,10 +433,7 @@ def _extract_transaction_id(text: str):
             
     for word in words:
         if 8 <= len(word) <= 12:
-            has_letter = any(char.isalpha() for char in word)
-            has_number = any(char.isdigit() for char in word)
-            
-            if has_letter and has_number:
+            if any(char.isalpha() for char in word) and any(char.isdigit() for char in word):
                 return word
                 
     return None
@@ -462,11 +459,6 @@ def cmd_start(message):
                 user_ref_data[chat_id] = ref_id
         except Exception:
             pass
-
-    def get_welcome_markup(lang):
-        kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("🎮 አሁን ይጫወቱ (Play Now)", web_app=WebAppInfo(url=MINI_APP_URL)))
-        return kb
 
     lang = get_lang(chat_id)
     banner_path = 'banner.jpg' 

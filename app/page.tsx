@@ -53,6 +53,13 @@ export default function AdminDashboard() {
     if (!isUnlocked) return;
     setIsLoadingData(true);
     
+    const now = new Date();
+    let startDate = new Date(0); 
+    if (timeScale === 'today') startDate = new Date(now.setHours(0,0,0,0));
+    if (timeScale === 'week') startDate = new Date(now.setDate(now.getDate() - 7));
+    if (timeScale === 'month') startDate = new Date(now.setDate(now.getDate() - 30));
+    const isoStart = startDate.toISOString();
+
     try {
       // Fetch Macro Stats safely
       const { data: globalData, error: globalErr } = await supabase.rpc('get_admin_stats');
@@ -68,12 +75,13 @@ export default function AdminDashboard() {
 
       if (pendingErr) console.error("Error fetching pending txs:", pendingErr);
 
-      // 2. Fetch Completed Deposits Directly
+      // 2. Fetch Completed Deposits Directly (Filtered by TimeScale to utilize the variable)
       const { data: completedDepositsData } = await supabase
           .from('transactions')
           .select('*')
           .eq('tx_type', 'deposit')
           .eq('status', 'completed')
+          .gte('created_at', isoStart)
           .order('created_at', { ascending: false })
           .limit(100);
 
@@ -120,7 +128,8 @@ export default function AdminDashboard() {
       setRecentDeposits(enrichedDeposits);
 
     } catch (err) {
-      console.error("Dashboard Sync Failed Entirely:", err);
+      const error = err as Error;
+      console.error("Dashboard Sync Failed Entirely:", error.message);
     } finally {
       setIsLoadingData(false);
     }
@@ -162,10 +171,12 @@ export default function AdminDashboard() {
             
         if (error) throw error;
         
+        // Instant visual update instead of waiting for next sync interval
         setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
         await fetchDashboardData();
     } catch (err) {
-        console.error("Approval Failed:", err);
+        const error = err as Error;
+        console.error("Approval Failed:", error.message);
         alert("Error approving transaction. Check network status.");
     } finally {
         setProcessingTx(null);
@@ -218,7 +229,7 @@ export default function AdminDashboard() {
 
     } catch (err) {
         const error = err as Error;
-        console.error("CRITICAL COMMAND CANCELED:", error);
+        console.error("CRITICAL COMMAND CANCELED:", error.message);
         alert(`Failed to complete reject command.\n\nReason: ${error.message || 'Check database permissions.'}`);
     } finally {
         setProcessingTx(null);
