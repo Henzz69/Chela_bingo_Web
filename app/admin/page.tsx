@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '@/lib/supabaseClient';
+import supabase from '@/lib/supabaseClient';
 
 // 🔒 THE MASTER PASSWORD VAULT
 const MASTER_PASSWORD = "chelahebenki2026";
@@ -52,20 +52,13 @@ export default function AdminDashboard() {
   const fetchDashboardData = async () => {
     if (!isUnlocked) return;
     setIsLoadingData(true);
-    
-    const now = new Date();
-    let startDate = new Date(0); 
-    if (timeScale === 'today') startDate = new Date(now.setHours(0,0,0,0));
-    if (timeScale === 'week') startDate = new Date(now.setDate(now.getDate() - 7));
-    if (timeScale === 'month') startDate = new Date(now.setDate(now.getDate() - 30));
-    const isoStart = startDate.toISOString();
 
     try {
       // Fetch Macro Stats safely
       const { data: globalData, error: globalErr } = await supabase.rpc('get_admin_stats');
       if (!globalErr && globalData) setMacroStats(globalData as AdminStats);
 
-      // 1. Fetch Pending Withdrawals Directly
+      // 1. Fetch ALL Pending Withdrawals Directly (Old data will now show)
       const { data: pendingWithdrawalsData, error: pendingErr } = await supabase
           .from('transactions')
           .select('*')
@@ -75,13 +68,12 @@ export default function AdminDashboard() {
 
       if (pendingErr) console.error("Error fetching pending txs:", pendingErr);
 
-      // 2. Fetch Completed Deposits Directly (Linked to TimeScale)
+      // 2. Fetch Completed Deposits Directly (Always pulls last 100)
       const { data: completedDepositsData } = await supabase
           .from('transactions')
           .select('*')
           .eq('tx_type', 'deposit')
           .eq('status', 'completed')
-          .gte('created_at', isoStart)
           .order('created_at', { ascending: false })
           .limit(100);
 
