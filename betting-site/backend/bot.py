@@ -14,7 +14,6 @@ import subprocess
 import threading
 import telebot
 import requests 
-import uuid
 from telebot.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
     ReplyKeyboardMarkup, KeyboardButton,
@@ -141,7 +140,7 @@ def _start_tunnel(port: int = 3000) -> str:
     _tunnel_proc = subprocess.Popen(["npx", "localtunnel", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
     url = None
     for line in _tunnel_proc.stdout:
-        match = re.search(r"your url is:\s*(https://\S+)", line)
+        match = re.search(r"your url is:\s*(https://S+)", line)
         if match:
             url = match.group(1).strip()
             break
@@ -178,17 +177,20 @@ except Exception:
 user_state: dict[int, str] = {}
 user_lang: dict[int, str] = {}  
 user_deposit_data: dict[int, dict] = {} 
-user_withdraw_data: dict[int, dict] = {}
 user_ref_data: dict[int, int] = {} 
 
 STATE_IDLE              = "IDLE"
 STATE_AWAITING_DEPOSIT  = "AWAITING_DEPOSIT"
 STATE_AWAITING_TXN_SMS  = "AWAITING_TXN_SMS"
+<<<<<<< HEAD
 STATE_WITHDRAW_AMOUNT   = "WITHDRAW_AMOUNT"
 STATE_WITHDRAW_BANK     = "WITHDRAW_BANK"
 STATE_WITHDRAW_NAME     = "WITHDRAW_NAME"
 STATE_WITHDRAW_ACCOUNT  = "WITHDRAW_ACCOUNT"
 STATE_WITHDRAW_CONFIRM  = "WITHDRAW_CONFIRM"
+=======
+STATE_AWAITING_WITHDRAW = "AWAITING_WITHDRAW"
+>>>>>>> parent of 4c24464 (Update bot.py)
 
 def get_state(chat_id: int) -> str:
     return user_state.get(chat_id, STATE_IDLE)
@@ -234,11 +236,13 @@ STRINGS = {
         "reg_success": "✅ *Registration Complete!*\n\nWelcome aboard! Your account is verified.\nUse the menu below to manage your wallet.",
         "curr_bal": "💰 *Wallet Breakdown:*\n\n💵 *Total Balance:* `{:.2f} ETB`\n🔓 *Withdrawable:* `{:.2f} ETB`\n🎁 *Promo/Bingo Cash:* `{:.2f} ETB`",
         "enter_amount": "📥 *Deposit Amount*\n\nPlease enter or select the exact amount of ETB you want to deposit:",
+        "enter_with_amount": "📤 *Withdraw Funds*\n\nPlease enter the amount you want to withdraw:",
         "invalid_amount": "⚠️ Please enter a valid positive number.",
         "min_dep_err": "⚠️ *Invalid Amount:* The minimum deposit amount is 50 ETB.",
         "min_with_err": "⚠️ *Invalid Amount:* The minimum withdrawal amount is 500 ETB.",
         "insufficient": "❌ Insufficient Balance. You only have `{:.2f} ETB` withdrawable cash.",
         "promo_locked_err": "❌ *Withdrawal Failed*\n\nYou requested more than your withdrawable limit.\n\n🔓 Withdrawable: `{:.2f} ETB`\n🎁 Promo (Gameplay Only): `{:.2f} ETB`",
+        "with_submitted": "✅ Withdrawal request of `{:.0f} ETB` submitted! Our team will process it shortly.",
         "action_cancelled": "Action cancelled.",
         "choose_provider": "💳 *Select Deposit Provider*\n\nPlease select the preferred banking platform for payment verification:",
         "checking_api": "⏳ *Verifying transaction with the bank backend, please wait...*",
@@ -271,11 +275,13 @@ STRINGS = {
         "reg_success": "✅ *ምዝገባው ተጠናቋል!*\n\nእንኳን ደህና መጡ! መለያዎ ተረጋግጧል።\nየኪስ ቦርሳዎን ለማስተዳደር ከታች ያለውን ምናሌ ይጠቀሙ።",
         "curr_bal": "💰 *የኪስ ቦርሳዎ:*\n\n💵 *ጠቅላላ ቀሪ ሂሳብ:* `{:.2f} ETB`\n🔓 *ማውጣት የሚቻለው:* `{:.2f} ETB`\n🎁 *የቦነስ/ፕሮሞ ሂሳብ:* `{:.2f} ETB`",
         "enter_amount": "📥 *የማስቀመጫ መጠን*\n\nእባክዎ ማስገባት የሚፈልጉትን የገንዘብ መጠን በETB ያስገቡ ወይም ይምረጡ:",
+        "enter_with_amount": "📤 *ገንዘብ ማውጫ*\n\nእባክዎ ማውጣት የሚፈልጉትን የገንዘብ መጠን ያስገቡ:",
         "invalid_amount": "⚠️ እባክዎን ትክክለኛ ቁጥር ያስገቡ።",
         "min_dep_err": "⚠️ *የተሳሳተ መጠን:* አነስተኛው የገንዘብ ማስገቢያ መጠን 50 ETB ነው።",
         "min_with_err": "⚠️ *የተሳሳተ መጠን:* አነስተኛው የገንዘብ ማውጫ መጠን 500 ETB ነው።",
         "insufficient": "❌ በቂ ቀሪ ሂሳብ የለዎትም። ማውጣት የሚችሉት `{:.2f} ETB` ብቻ ነው።",
         "promo_locked_err": "❌ *ማውጣት አልተሳካም*\n\nከሚፈቀደው የማውጫ መጠን በላይ ጠይቀዋል።\n\n🔓 ማውጣት የሚቻለው: `{:.2f} ETB`\n🎁 ፕሮሞ (ለመጫወቻ ብቻ): `{:.2f} ETB`",
+        "with_submitted": "✅ የ `{:.0f} ETB` ማውጫ ጥያቄዎ ቀርቧል! በቅርቡ እናስተናግዳለን።",
         "action_cancelled": "ድርጊቱ ተሰርዟል።",
         "choose_provider": "💳 *የክፍያ መንገድ ይምረጡ*\n\nእባክዎ ለማረጋገጫ የሚጠቀሙበትን የባንክ ወይም የክፍያ አማራጭ ይምረጡ:",
         "checking_api": "⏳ *ግብይቱን ከባንክ ጋር እያረጋገጥን ነው፣ እባክዎ ይጠብቁ...*",
@@ -356,6 +362,7 @@ def quick_amount_markup() -> InlineKeyboardMarkup:
     )
     return kb
 
+<<<<<<< HEAD
 def withdraw_bank_markup() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
@@ -378,6 +385,8 @@ def withdraw_confirm_markup() -> InlineKeyboardMarkup:
     )
     return kb
 
+=======
+>>>>>>> parent of 4c24464 (Update bot.py)
 def remove_keyboard() -> ReplyKeyboardRemove:
     return ReplyKeyboardRemove()
 
@@ -609,9 +618,14 @@ def cmd_withdraw(message):
         bot.send_message(chat_id, STRINGS[lang]["locked_warning"], reply_markup=cancel_reply_keyboard(lang))
         return
 
+<<<<<<< HEAD
     set_state(chat_id, STATE_WITHDRAW_AMOUNT)
     bot.send_message(chat_id, STRINGS[lang]["cancel_instruction"], reply_markup=cancel_reply_keyboard(lang))
     bot.send_message(chat_id, "Please send the amount to withdraw:")
+=======
+    set_state(chat_id, STATE_AWAITING_WITHDRAW)
+    bot.send_message(chat_id, STRINGS[lang]["enter_with_amount"], reply_markup=cancel_reply_keyboard(lang))
+>>>>>>> parent of 4c24464 (Update bot.py)
 
 @bot.message_handler(commands=["testsms"])
 def cmd_testsms(message):
@@ -732,6 +746,7 @@ def handle_callback(call):
     # 🚀 FIXED STATE LOCKING ENFORCEMENT
     if state != STATE_IDLE:
         is_allowed = False
+<<<<<<< HEAD
         
         if state == STATE_AWAITING_DEPOSIT and (data.startswith("dep_prov|") or data.startswith("dep_amt|")):
             is_allowed = True
@@ -739,6 +754,11 @@ def handle_callback(call):
             is_allowed = True
         elif state == STATE_WITHDRAW_CONFIRM and data.startswith("with_confirm|"):
             is_allowed = True
+=======
+        # Only allow advancing the deposit flow if they are in the deposit state
+        if state == STATE_AWAITING_DEPOSIT and (data.startswith("dep_prov|") or data.startswith("dep_amt|")):
+            is_allowed = True
+>>>>>>> parent of 4c24464 (Update bot.py)
             
         if not is_allowed:
             bot.answer_callback_query(call.id, STRINGS[lang]["locked_warning"], show_alert=True)
@@ -798,6 +818,7 @@ def handle_callback(call):
 
     elif data == "action_withdraw":
         bot.answer_callback_query(call.id)
+<<<<<<< HEAD
         set_state(chat_id, STATE_WITHDRAW_AMOUNT)
         bot.send_message(chat_id, STRINGS[lang]["cancel_instruction"], reply_markup=cancel_reply_keyboard(lang))
         bot.send_message(chat_id, "Please send the amount to withdraw:")
@@ -854,6 +875,11 @@ def handle_callback(call):
         
         bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
 
+=======
+        set_state(chat_id, STATE_AWAITING_WITHDRAW)
+        bot.send_message(chat_id, STRINGS[lang]["enter_with_amount"], reply_markup=cancel_reply_keyboard(lang))
+        
+>>>>>>> parent of 4c24464 (Update bot.py)
     elif data == "action_invite":
         bot.answer_callback_query(call.id)
         ref_link = f"https://t.me/ChelaBingoBot?start=REF_{call.from_user.id}"
@@ -912,6 +938,7 @@ def handle_text(message):
         bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
         return
 
+<<<<<<< HEAD
     # 🚀 WITHDRAWAL MULTI-STEP ENGINE
     if state == STATE_WITHDRAW_AMOUNT:
         try:
@@ -963,6 +990,8 @@ def handle_text(message):
         bot.send_message(chat_id, confirm_text, reply_markup=withdraw_confirm_markup(), parse_mode="Markdown")
         return
 
+=======
+>>>>>>> parent of 4c24464 (Update bot.py)
     # 🚀 X-RAY VERIFICATION ENGINE
     if state == STATE_AWAITING_TXN_SMS:
         set_state(chat_id, STATE_IDLE)
@@ -1086,7 +1115,7 @@ def handle_text(message):
         bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
         return
 
-    if state == STATE_AWAITING_DEPOSIT:
+    if state in (STATE_AWAITING_DEPOSIT, STATE_AWAITING_WITHDRAW):
         try:
             clean_text_amount = text.replace(',', '')
             amount = float(clean_text_amount)
@@ -1096,19 +1125,46 @@ def handle_text(message):
             bot.send_message(chat_id, STRINGS[lang]["invalid_amount"])
             return
 
-        if amount < 50:
-            bot.send_message(chat_id, STRINGS[lang]["min_dep_err"])
-            return
+        if state == STATE_AWAITING_DEPOSIT:
+            if amount < 50:
+                bot.send_message(chat_id, STRINGS[lang]["min_dep_err"])
+                return
+                
+            if chat_id not in user_deposit_data:
+                user_deposit_data[chat_id] = {"provider": "telebirr"}
             
-        if chat_id not in user_deposit_data:
-            user_deposit_data[chat_id] = {"provider": "telebirr"}
-        
-        user_deposit_data[chat_id]["amount"] = amount
-        provider = user_deposit_data[chat_id]["provider"]
-        set_state(chat_id, STATE_AWAITING_TXN_SMS)
-        
-        inst_txt = STRINGS[lang][f"inst_{provider}"].format(amount)
-        bot.send_message(chat_id, inst_txt, reply_markup=cancel_reply_keyboard(lang), parse_mode="HTML")
+            user_deposit_data[chat_id]["amount"] = amount
+            provider = user_deposit_data[chat_id]["provider"]
+            set_state(chat_id, STATE_AWAITING_TXN_SMS)
+            
+            inst_txt = STRINGS[lang][f"inst_{provider}"].format(amount)
+            bot.send_message(chat_id, inst_txt, reply_markup=cancel_reply_keyboard(lang), parse_mode="HTML")
+
+        elif state == STATE_AWAITING_WITHDRAW:
+            if amount < 500:
+                bot.send_message(chat_id, STRINGS[lang]["min_with_err"])
+                return
+                
+            real_bal, promo_bal, total_bal = _get_user_wallet(message.from_user.id)
+            set_state(chat_id, STATE_IDLE)
+            
+            if amount > real_bal:
+                bot.send_message(chat_id, STRINGS[lang]["promo_locked_err"].format(real_bal, promo_bal), reply_markup=remove_keyboard())
+            else:
+                if _supabase is not None:
+                    new_balance = real_bal - amount
+                    _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
+                    
+                    _supabase.table("transactions").insert({
+                        "user_id": str(message.from_user.id),
+                        "amount": amount,
+                        "tx_type": "withdrawal",
+                        "status": "pending"
+                    }).execute()
+
+                bot.send_message(chat_id, STRINGS[lang]["with_submitted"].format(amount), reply_markup=remove_keyboard())
+
+            bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
         return
 
     if state == STATE_IDLE:
