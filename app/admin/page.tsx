@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '@/lib/supabaseClient';
+import supabase from '@/lib/supabaseClient'; // Make sure this path is correct for your project!
 
 // 🔒 THE MASTER PASSWORD VAULT
 const MASTER_PASSWORD = "chelahebenki2026";
@@ -18,13 +18,9 @@ interface EnrichedTransaction {
   created_at: string;
   display_name?: string;
   phone?: string;
-}
-
-interface DashboardStats {
-  deposits: number;
-  withdrawals: number;
-  gamesHosted: number;
-  netFlow: number;
+  bank_name?: string;       
+  account_name?: string;    
+  account_number?: string;  
 }
 
 interface AdminStats {
@@ -33,13 +29,17 @@ interface AdminStats {
   active_rooms: number;
 }
 
+interface UserLookup {
+  display_name: string | null;
+  phone: string | null;
+}
+
 export default function AdminDashboard() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [passInput, setPassInput] = useState('');
   const [passError, setPassError] = useState(false);
 
   const [timeScale, setTimeScale] = useState<TimeScale>('today');
-  const [stats, setStats] = useState<DashboardStats>({ deposits: 0, withdrawals: 0, gamesHosted: 0, netFlow: 0 });
   const [macroStats, setMacroStats] = useState<AdminStats | null>(null);
   
   const [pendingTxs, setPendingTxs] = useState<EnrichedTransaction[]>([]);
@@ -48,66 +48,94 @@ export default function AdminDashboard() {
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [processingTx, setProcessingTx] = useState<string | null>(null);
 
-  // 📊 THE HYBRID ANALYTICS ENGINE
-  useEffect(() => {
-    if (!isUnlocked) return; 
+  // 📊 DIRECT SUPABASE FETCH ENGINE
+  const fetchDashboardData = async () => {
+    if (!isUnlocked) return;
+    setIsLoadingData(true);
+    
+    const now = new Date();
+    let startDate = new Date(0); 
+    if (timeScale === 'today') startDate = new Date(now.setHours(0,0,0,0));
+    if (timeScale === 'week') startDate = new Date(now.setDate(now.getDate() - 7));
+    if (timeScale === 'month') startDate = new Date(now.setDate(now.getDate() - 30));
+    const isoStart = startDate.toISOString();
 
-    const fetchDashboardData = async () => {
-      setIsLoadingData(true);
-      
-      const now = new Date();
-      let startDate = new Date(0); 
-      if (timeScale === 'today') startDate = new Date(now.setHours(0,0,0,0));
-      if (timeScale === 'week') startDate = new Date(now.setDate(now.getDate() - 7));
-      if (timeScale === 'month') startDate = new Date(now.setDate(now.getDate() - 30));
-      const isoStart = startDate.toISOString();
+    try {
+      // Fetch Macro Stats safely
+      const { data: globalData, error: globalErr } = await supabase.rpc('get_admin_stats');
+      if (!globalErr && globalData) setMacroStats(globalData as AdminStats);
 
-      try {
-        // Fetch Macro Stats
-        const { data: globalData } = await supabase.rpc('get_admin_stats');
-        if (globalData) setMacroStats(globalData as AdminStats);
-
-        // Fetch Secure Enriched Transactions (Bypasses RLS)
-        const { data: txDataRpc } = await supabase.rpc('get_admin_transactions');
-        if (txDataRpc) {
-          setPendingTxs(txDataRpc.pending_withdrawals);
-          setRecentDeposits(txDataRpc.recent_deposits);
-        }
-
-        // Fetch Time-Scaled Metrics
-        const { data: txData } = await supabase
+      // 1. Fetch Pending Withdrawals Directly
+      const { data: pendingWithdrawalsData, error: pendingErr } = await supabase
           .from('transactions')
-          .select('amount, tx_type')
+          .select('*')
+          .eq('tx_type', 'withdrawal')
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
+
+      if (pendingErr) console.error("Error fetching pending txs:", pendingErr);
+
+      // 2. Fetch Completed Deposits Directly (Linked to TimeScale)
+      const { data: completedDepositsData } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('tx_type', 'deposit')
+          .eq('status', 'completed')
           .gte('created_at', isoStart)
-          .eq('status', 'completed');
+          .order('created_at', { ascending: false })
+          .limit(100);
 
-        const { count: gamesCount } = await supabase
-          .from('bingo_rooms')
-          .select('*', { count: 'exact', head: true })
-          .gte('created_at', isoStart);
+      // 3. Fetch User Details to map names and phones
+      const { data: usersData } = await supabase
+          .from('tg_users')
+          .select('tg_id, display_name, phone');
 
-        let deposits = 0;
-        let withdrawals = 0;
-
-        txData?.forEach(tx => {
-          if (tx.tx_type === 'deposit') deposits += Number(tx.amount);
-          if (tx.tx_type === 'withdrawal') withdrawals += Number(tx.amount);
-        });
-
-        setStats({
-          deposits,
-          withdrawals,
-          gamesHosted: gamesCount || 0,
-          netFlow: deposits - withdrawals
-        });
-
-      } catch (err) {
-        console.error("Dashboard Sync Failed:", err);
-      } finally {
-        setIsLoadingData(false);
+      // Create a fast lookup map strictly typed to avoid Vercel build failures
+      const userMap: Record<string, UserLookup> = {};
+      if (usersData) {
+          usersData.forEach(user => {
+              if (user.tg_id) {
+                userMap[user.tg_id.toString()] = {
+                  display_name: user.display_name,
+                  phone: user.phone
+                };
+              }
+          });
       }
-    };
 
+      // Enrich the transactions with User Data safely
+      const enrichedWithdrawals = (pendingWithdrawalsData || []).map(tx => {
+          const lookupId = tx.user_id ? tx.user_id.toString() : '';
+          const match = userMap[lookupId];
+          return {
+              ...tx,
+              display_name: match?.display_name || 'Unknown User',
+              phone: match?.phone || 'No Phone'
+          };
+      });
+
+      const enrichedDeposits = (completedDepositsData || []).map(tx => {
+          const lookupId = tx.user_id ? tx.user_id.toString() : '';
+          const match = userMap[lookupId];
+          return {
+              ...tx,
+              display_name: match?.display_name || 'Unknown User',
+              phone: match?.phone || 'No Phone'
+          };
+      });
+
+      setPendingTxs(enrichedWithdrawals);
+      setRecentDeposits(enrichedDeposits);
+
+    } catch (err) {
+      const error = err as Error;
+      console.error("Dashboard Sync Failed Entirely:", error.message);
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  useEffect(() => {
     fetchDashboardData();
     const interval = setInterval(fetchDashboardData, 15000); 
     return () => clearInterval(interval);
@@ -131,24 +159,81 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🚀 SECURE ACTION HANDLERS
+  // 🚀 DIRECT APPROVAL LOGIC
   const handleApprove = async (txId: string) => {
+    if (!window.confirm("Mark this withdrawal as Approved and Paid?")) return;
     setProcessingTx(txId);
-    await supabase.rpc('admin_approve_withdrawal', { p_tx_id: txId });
-    setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
-    setProcessingTx(null);
+    try {
+        const { error } = await supabase
+            .from('transactions')
+            .update({ status: 'completed' })
+            .eq('id', txId);
+            
+        if (error) throw error;
+        
+        // Instant visual update instead of waiting for next sync interval
+        setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
+        await fetchDashboardData();
+    } catch (err) {
+        const error = err as Error;
+        console.error("Approval Failed:", error.message);
+        alert("Error approving transaction. Check network status.");
+    } finally {
+        setProcessingTx(null);
+    }
   };
 
+  // 🚀 BULLETPROOF REJECT & FULL REFUND LOGIC
   const handleReject = async (txId: string, userId: string, amount: number) => {
-    if (!window.confirm("Reject this withdrawal and refund the user's wallet?")) return;
+    if (!window.confirm(`Are you sure you want to REJECT this transaction and REFUND ${amount} ETB to the user's wallet?`)) return;
     setProcessingTx(txId);
-    await supabase.rpc('admin_reject_withdrawal', {
-        p_tx_id: txId,
-        p_user_id: userId,
-        p_amount: amount
-    });
-    setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
-    setProcessingTx(null);
+
+    try {
+        const numericUserId = isNaN(Number(userId)) ? null : Number(userId);
+        const searchId = numericUserId !== null ? numericUserId : userId;
+
+        // 1. Fetch current user balance accurately
+        const { data: userData, error: userErr } = await supabase
+            .from('tg_users')
+            .select('balance')
+            .eq('tg_id', searchId)
+            .single();
+
+        if (userErr) throw userErr;
+        if (!userData) throw new Error(`User with Telegram ID ${userId} does not exist.`);
+
+        // 2. Process math explicitly
+        const currentBalance = Number(userData.balance) || 0;
+        const refundAmount = Number(amount) || 0;
+        const newBalance = currentBalance + refundAmount;
+
+        // 3. Update the user's balance safely
+        const { error: refundErr } = await supabase
+            .from('tg_users')
+            .update({ balance: newBalance })
+            .eq('tg_id', searchId);
+
+        if (refundErr) throw refundErr;
+
+        // 4. Mark transaction status as rejected
+        const { error: txErr } = await supabase
+            .from('transactions')
+            .update({ status: 'rejected' })
+            .eq('id', txId);
+
+        if (txErr) throw txErr;
+
+        setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
+        alert(`✅ Success! Refunded ${refundAmount} ETB back to user.`);
+        await fetchDashboardData();
+
+    } catch (err) {
+        const error = err as Error;
+        console.error("CRITICAL COMMAND CANCELED:", error.message);
+        alert(`Failed to complete reject command.\n\nReason: ${error.message || 'Check database permissions.'}`);
+    } finally {
+        setProcessingTx(null);
+    }
   };
 
   if (!isUnlocked) {
@@ -197,7 +282,9 @@ export default function AdminDashboard() {
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
               <span className="text-emerald-500 text-[10px] font-black tracking-widest">SYSTEM ONLINE</span>
             </div>
-            <span className="text-[9px] text-neutral-600 tracking-widest">AUTHORIZED DEVICE</span>
+            <button onClick={fetchDashboardData} disabled={isLoadingData} className="text-[10px] text-neutral-400 bg-neutral-900 border border-neutral-800 px-2 py-0.5 mt-1 rounded hover:bg-neutral-800 active:scale-95 transition-all">
+              {isLoadingData ? 'SYNCING...' : '🔄 FORCE REFRESH'}
+            </button>
           </div>
         </header>
 
@@ -229,54 +316,107 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Time filters */}
+        <div className="flex gap-2 bg-neutral-900/40 p-1 rounded-xl border border-neutral-800/80 w-max">
+          {(['today', 'week', 'month', 'all'] as TimeScale[]).map((scale) => (
+            <button key={scale} onClick={() => setTimeScale(scale)} className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${timeScale === scale ? 'bg-emerald-500 text-black shadow-md' : 'text-neutral-400 hover:text-white'}`}>
+              {scale}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
           
-          {/* ⚡ WITHDRAWALS: Action Queue */}
-          <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg flex flex-col h-[500px]">
+          {/* ⚡ WITHDRAWALS: Detailed Action Queue */}
+          <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg flex flex-col h-[700px]">
             <div className="bg-neutral-900 border-b border-neutral-800 px-6 py-4 flex justify-between items-center shrink-0">
               <h2 className="text-lg font-black tracking-widest text-white flex items-center gap-2">
-                <span className="text-yellow-500">📤</span> WITHDRAWALS
+                <span className="text-yellow-500">📤</span> WITHDRAWAL REQUESTS
               </h2>
-              <span className="bg-yellow-500/10 text-yellow-500 text-[10px] font-bold px-2 py-1 rounded border border-yellow-500/20 uppercase">
-                {pendingTxs.length} Pending
+              <span className="bg-yellow-500/10 text-yellow-500 text-[10px] font-bold px-3 py-1.5 rounded border border-yellow-500/20 uppercase shadow-[0_0_10px_rgba(234,179,8,0.2)]">
+                {pendingTxs.length} Pending Action
               </span>
             </div>
             
-            <div className="overflow-y-auto flex-1 p-4 space-y-3 custom-scrollbar">
+            <div className="overflow-y-auto flex-1 p-4 md:p-6 space-y-6 custom-scrollbar bg-[#0a0a0a]">
               {pendingTxs.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-neutral-500 text-sm font-medium">All queues clear. No pending requests.</div>
+                <div className="flex flex-col items-center justify-center h-full text-neutral-500">
+                    <span className="text-4xl mb-2 opacity-50">☕</span>
+                    <span className="text-sm font-medium tracking-widest uppercase">All queues clear</span>
+                </div>
               ) : (
                 <AnimatePresence>
                   {pendingTxs.map((tx) => (
-                    <motion.div key={tx.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -10 }} 
-                      className="bg-neutral-950 border border-neutral-800 p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+                    <motion.div key={tx.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, x: -50 }} 
+                      className="bg-neutral-950 border border-neutral-800 rounded-xl flex flex-col relative overflow-hidden shadow-xl"
                     >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-orange-400 font-black text-lg">{tx.amount.toLocaleString()} ETB</span>
-                          <span className="text-[9px] text-neutral-500 tracking-widest uppercase">{timeAgo(tx.created_at)}</span>
+                      {/* Accent Strip */}
+                      <div className="absolute left-0 top-0 w-1.5 h-full bg-gradient-to-b from-orange-400 to-yellow-600 shadow-[0_0_15px_rgba(249,115,22,0.5)]"></div>
+                      
+                      {/* Top Bar */}
+                      <div className="flex items-center justify-between p-4 border-b border-neutral-800/80 bg-neutral-900/50">
+                        <div className="flex items-center gap-3">
+                          <span className="text-orange-400 font-black text-3xl drop-shadow-md">{tx.amount.toLocaleString()} ETB</span>
                         </div>
-                        <div className="text-xs text-neutral-400">
-                          ID: <span className="font-mono text-neutral-300">{tx.user_id}</span>
-                        </div>
-                        <div className="text-xs text-neutral-400 mt-0.5">
-                          Player: <span className="font-bold text-white">{tx.display_name || 'Unknown'}</span> 
-                          {tx.phone && <span className="ml-2 bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20">{tx.phone}</span>}
+                        <div className="flex flex-col items-end">
+                            <span className="text-[10px] text-neutral-400 tracking-widest uppercase font-bold">{timeAgo(tx.created_at)}</span>
+                            <span className="text-[9px] text-neutral-600 font-mono mt-1">TX: {tx.id.split('-')[0]}</span>
                         </div>
                       </div>
-                      
-                      <div className="flex gap-2 w-full sm:w-auto">
+
+                      {/* Main Content Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-0">
+                        
+                        {/* Left Column: Player Identity */}
+                        <div className="p-4 border-b sm:border-b-0 sm:border-r border-neutral-800/80 space-y-3 bg-neutral-950">
+                          <div>
+                            <p className="text-neutral-600 text-[9px] font-black uppercase tracking-widest mb-1">Player Identity</p>
+                            <p className="font-bold text-white text-sm">{tx.display_name || 'Unknown'}</p>
+                          </div>
+                          <div>
+                            <p className="text-neutral-600 text-[9px] font-black uppercase tracking-widest mb-1">Phone Link</p>
+                            <p className="text-blue-400 font-mono text-xs bg-blue-500/10 inline-block px-2 py-1 rounded border border-blue-500/20">{tx.phone || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-neutral-600 text-[9px] font-black uppercase tracking-widest mb-1">Telegram UID</p>
+                            <p className="text-neutral-500 font-mono text-[10px]">{tx.user_id}</p>
+                          </div>
+                        </div>
+
+                        {/* Right Column: Banking Details */}
+                        <div className="p-4 space-y-3 bg-neutral-900/20">
+                            <div>
+                                <p className="text-emerald-500/70 text-[9px] font-black uppercase tracking-widest mb-1">Target Bank</p>
+                                <p className="font-bold text-emerald-400 text-sm">{tx.bank_name || 'Not Provided'}</p>
+                            </div>
+                            <div>
+                                <p className="text-emerald-500/70 text-[9px] font-black uppercase tracking-widest mb-1">Account Name</p>
+                                <p className="font-bold text-white text-xs">{tx.account_name || 'Not Provided'}</p>
+                            </div>
+                            <div>
+                                <p className="text-emerald-500/70 text-[9px] font-black uppercase tracking-widest mb-1">Account Number (Select to copy)</p>
+                                <p className="text-emerald-300 font-mono text-sm bg-black px-3 py-1.5 rounded border border-emerald-500/30 select-all tracking-wider shadow-inner block w-max">
+                                    {tx.account_number || 'N/A'}
+                                </p>
+                            </div>
+                        </div>
+                      </div>
+
+                      {/* Action Buttons Footer */}
+                      <div className="p-4 bg-neutral-900 border-t border-neutral-800">
                         {processingTx === tx.id ? (
-                          <div className="w-full text-center text-xs text-neutral-500 animate-pulse py-2">Processing...</div>
+                          <div className="w-full text-center text-xs text-orange-400 font-bold animate-pulse py-3 bg-orange-500/10 rounded-lg border border-orange-500/20 tracking-widest uppercase">
+                            Executing Database Command...
+                          </div>
                         ) : (
-                          <>
-                            <button onClick={() => handleApprove(tx.id)} className="flex-1 sm:w-auto px-4 py-2 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 hover:bg-emerald-500 hover:text-black transition-colors font-bold text-xs uppercase tracking-widest">
-                              Approve
+                          <div className="flex gap-3">
+                            <button onClick={() => handleReject(tx.id, tx.user_id, tx.amount)} className="flex-1 py-3 rounded-lg bg-[#1a0505] text-red-500 border border-red-900 hover:bg-red-500 hover:text-white transition-all font-black text-[11px] uppercase tracking-widest">
+                              Reject & Refund
                             </button>
-                            <button onClick={() => handleReject(tx.id, tx.user_id, tx.amount)} className="flex-1 sm:w-auto px-4 py-2 rounded bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition-colors font-bold text-xs uppercase tracking-widest">
-                              Reject
+                            <button onClick={() => handleApprove(tx.id)} className="flex-[2] py-3 rounded-lg bg-emerald-500 text-black border border-emerald-400 hover:bg-emerald-400 transition-all font-black text-[11px] uppercase tracking-widest shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+                              Mark as Paid
                             </button>
-                          </>
+                          </div>
                         )}
                       </div>
                     </motion.div>
@@ -286,32 +426,44 @@ export default function AdminDashboard() {
             </div>
           </section>
 
-          {/* 📥 DEPOSITS: Settled Ledger */}
-          <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg flex flex-col h-[500px]">
+          {/* 📥 DEPOSITS: Detailed Settled Ledger */}
+          <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg flex flex-col h-[700px]">
             <div className="bg-neutral-900 border-b border-neutral-800 px-6 py-4 flex justify-between items-center shrink-0">
               <h2 className="text-lg font-black tracking-widest text-white flex items-center gap-2">
-                <span className="text-emerald-500">📥</span> DEPOSIT LEDGER
+                <span className="text-emerald-500">📥</span> SUCCESSFUL DEPOSITS
               </h2>
-              <span className="bg-emerald-500/10 text-emerald-500 text-[10px] font-bold px-2 py-1 rounded border border-emerald-500/20 uppercase">
+              <span className="bg-emerald-500/10 text-emerald-500 text-[10px] font-bold px-3 py-1.5 rounded border border-emerald-500/20 uppercase shadow-[0_0_10px_rgba(16,185,129,0.2)]">
                 Last 100
               </span>
             </div>
             
-            <div className="overflow-y-auto flex-1 p-4 space-y-3 custom-scrollbar">
+            <div className="overflow-y-auto flex-1 p-4 md:p-6 space-y-4 custom-scrollbar bg-[#0a0a0a]">
               {recentDeposits.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-neutral-500 text-sm font-medium">No recent deposit activity.</div>
+                <div className="flex flex-col items-center justify-center h-full text-neutral-500">
+                    <span className="text-4xl mb-2 opacity-50">📭</span>
+                    <span className="text-sm font-medium tracking-widest uppercase">No recent deposits</span>
+                </div>
               ) : (
                 recentDeposits.map((tx) => (
-                  <div key={tx.id} className="bg-neutral-950/50 border border-neutral-800/50 p-3 rounded-lg flex items-center justify-between">
-                    <div>
-                      <div className="text-emerald-400 font-bold text-sm">+{tx.amount.toLocaleString()} ETB</div>
-                      <div className="text-[10px] text-neutral-500 truncate max-w-[150px] sm:max-w-[200px] mt-0.5">
-                        {tx.display_name || tx.user_id}
+                  <div key={tx.id} className="bg-neutral-950 border border-neutral-800/80 p-4 rounded-xl flex flex-col gap-3 hover:border-emerald-500/40 transition-colors relative overflow-hidden group">
+                    <div className="absolute left-0 top-0 w-1 h-full bg-emerald-500/30 group-hover:bg-emerald-500 transition-colors"></div>
+                    
+                    <div className="flex items-center justify-between border-b border-neutral-800/50 pb-2">
+                      <div className="text-emerald-400 font-black text-xl drop-shadow-sm">+{tx.amount.toLocaleString()} ETB</div>
+                      <div className="text-right flex flex-col items-end">
+                        <div className="text-[10px] text-neutral-400 tracking-widest uppercase font-bold">{timeAgo(tx.created_at)}</div>
+                        <div className="text-[9px] text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded mt-1 font-black tracking-widest border border-emerald-500/20">API AUTOMATED</div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-[10px] text-neutral-400 tracking-widest uppercase">{timeAgo(tx.created_at)}</div>
-                      <div className="text-[9px] text-emerald-500/50 uppercase mt-0.5">Automated</div>
+                    
+                    <div className="flex items-end justify-between">
+                       <div className="flex flex-col">
+                           <span className="text-neutral-500 text-[9px] font-black uppercase tracking-widest mb-0.5">Credited To</span>
+                           <span className="text-sm text-white font-bold">{tx.display_name || tx.user_id}</span>
+                       </div>
+                       <div className="text-xs font-mono text-blue-400 bg-blue-500/10 px-2 py-1 rounded border border-blue-500/20">
+                           {tx.phone || 'No Phone Linked'}
+                       </div>
                     </div>
                   </div>
                 ))
