@@ -18,9 +18,9 @@ interface EnrichedTransaction {
   created_at: string;
   display_name?: string;
   phone?: string;
-  bank_name?: string;       // Added new bank detail field
-  account_name?: string;    // Added new bank detail field
-  account_number?: string;  // Added new bank detail field
+  bank_name?: string;       
+  account_name?: string;    
+  account_number?: string;  
 }
 
 interface DashboardStats {
@@ -73,8 +73,8 @@ export default function AdminDashboard() {
         // Fetch Secure Enriched Transactions (Bypasses RLS)
         const { data: txDataRpc } = await supabase.rpc('get_admin_transactions');
         if (txDataRpc) {
-          setPendingTxs(txDataRpc.pending_withdrawals);
-          setRecentDeposits(txDataRpc.recent_deposits);
+          setPendingTxs(txDataRpc.pending_withdrawals || []);
+          setRecentDeposits(txDataRpc.recent_deposits || []);
         }
 
         // Fetch Time-Scaled Metrics
@@ -254,10 +254,8 @@ export default function AdminDashboard() {
                     <motion.div key={tx.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -10 }} 
                       className="bg-neutral-950 border border-neutral-800 p-4 rounded-xl flex flex-col gap-4 relative overflow-hidden shadow-md"
                     >
-                      {/* Decorative accent strip */}
                       <div className="absolute left-0 top-0 w-1 h-full bg-orange-500/50"></div>
                       
-                      {/* Top Row: Amount & Time */}
                       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-neutral-800/50 pb-3">
                         <div className="flex items-center gap-3">
                           <span className="text-orange-400 font-black text-2xl">{tx.amount.toLocaleString()} ETB</span>
@@ -269,7 +267,6 @@ export default function AdminDashboard() {
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {/* Player Details Box */}
                         <div className="space-y-2">
                           <div className="flex items-center gap-2">
                             <span className="text-neutral-500 text-[10px] uppercase tracking-widest w-16">Player:</span>
@@ -281,7 +278,6 @@ export default function AdminDashboard() {
                           </div>
                         </div>
 
-                        {/* Beautiful Banking Details Box */}
                         <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-3 space-y-2 shadow-inner">
                           <div className="flex items-center gap-2">
                             <span className="text-emerald-500/70 text-[10px] uppercase tracking-widest w-16">Bank:</span>
@@ -293,12 +289,11 @@ export default function AdminDashboard() {
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-emerald-500/70 text-[10px] uppercase tracking-widest w-16">Account:</span>
-                            <span className="text-white font-mono bg-black px-1.5 py-0.5 rounded text-xs">{tx.account_number || 'Not provided'}</span>
+                            <span className="text-white font-mono bg-black px-1.5 py-0.5 rounded text-xs select-all">{tx.account_number || 'Not provided'}</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Action Buttons */}
                       <div className="flex gap-2 w-full pt-2 border-t border-neutral-800/50">
                         {processingTx === tx.id ? (
                           <div className="w-full text-center text-xs text-emerald-500 font-bold animate-pulse py-2 bg-emerald-500/10 rounded border border-emerald-500/20">Processing Transaction...</div>
@@ -338,7 +333,7 @@ export default function AdminDashboard() {
                 recentDeposits.map((tx) => (
                   <div key={tx.id} className="bg-neutral-950/50 border border-neutral-800/50 p-3 rounded-lg flex items-center justify-between hover:border-neutral-700 transition-colors">
                     <div>
-                      <div className="text-emerald-400 font-bold text-sm">+{tx.amount.toLocaleString()} ETB</div>
+                        <div className="text-emerald-400 font-bold text-sm">+{tx.amount.toLocaleString()} ETB</div>
                       <div className="text-[10px] text-neutral-500 truncate max-w-[150px] sm:max-w-[200px] mt-0.5">
                         {tx.display_name || tx.user_id}
                       </div>
