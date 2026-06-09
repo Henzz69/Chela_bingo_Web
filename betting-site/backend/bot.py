@@ -58,12 +58,6 @@ def is_admin(message) -> bool:
     # 1. Checks if it's your personal ID
     if getattr(message, 'from_user', None) and message.from_user.id in ADMIN_IDS:
         return True
-    # 2. Checks if you are sending anonymously as the Group/Channel
-    if getattr(message, 'sender_chat', None) and message.sender_chat.id == message.chat.id:
-        return True
-    # 3. Checks for Telegram's universal "Anonymous Admin" ID
-    if getattr(message, 'from_user', None) and message.from_user.id == 1087968824:
-        return True
     return False
 
 if not BOT_TOKEN or BOT_TOKEN == "your_bot_token_here":

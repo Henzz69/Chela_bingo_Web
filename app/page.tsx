@@ -51,105 +51,116 @@ export default function AdminDashboard() {
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [processingTx, setProcessingTx] = useState<string | null>(null);
 
-  // 📊 DIRECT SUPABASE FETCH ENGINE (Bypasses old RPCs to guarantee new column data)
-  useEffect(() => {
-    if (!isUnlocked) return; 
+  // 📊 DIRECT SUPABASE FETCH ENGINE
+  const fetchDashboardData = async () => {
+    if (!isUnlocked) return;
+    setIsLoadingData(true);
+    
+    const now = new Date();
+    let startDate = new Date(0); 
+    if (timeScale === 'today') startDate = new Date(now.setHours(0,0,0,0));
+    if (timeScale === 'week') startDate = new Date(now.setDate(now.getDate() - 7));
+    if (timeScale === 'month') startDate = new Date(now.setDate(now.getDate() - 30));
+    const isoStart = startDate.toISOString();
 
-    const fetchDashboardData = async () => {
-      setIsLoadingData(true);
-      
-      const now = new Date();
-      let startDate = new Date(0); 
-      if (timeScale === 'today') startDate = new Date(now.setHours(0,0,0,0));
-      if (timeScale === 'week') startDate = new Date(now.setDate(now.getDate() - 7));
-      if (timeScale === 'month') startDate = new Date(now.setDate(now.getDate() - 30));
-      const isoStart = startDate.toISOString();
+    try {
+      // Fetch Macro Stats safely
+      const { data: globalData, error: globalErr } = await supabase.rpc('get_admin_stats');
+      if (!globalErr && globalData) setMacroStats(globalData as AdminStats);
 
-      try {
-        // Fetch Macro Stats
-        const { data: globalData } = await supabase.rpc('get_admin_stats');
-        if (globalData) setMacroStats(globalData as AdminStats);
-
-        // 1. Fetch Pending Withdrawals Directly (Includes new bank columns)
-        const { data: pendingWithdrawalsData } = await supabase
-            .from('transactions')
-            .select('*')
-            .eq('tx_type', 'withdrawal')
-            .eq('status', 'pending')
-            .order('created_at', { ascending: false });
-
-        // 2. Fetch Completed Deposits Directly
-        const { data: completedDepositsData } = await supabase
-            .from('transactions')
-            .select('*')
-            .eq('tx_type', 'deposit')
-            .eq('status', 'completed')
-            .order('created_at', { ascending: false })
-            .limit(100);
-
-        // 3. Fetch User Details to map names and phones
-        const { data: usersData } = await supabase
-            .from('tg_users')
-            .select('tg_id, display_name, phone');
-
-        // Create a fast lookup map for users
-        const userMap: Record<string, any> = {};
-        if (usersData) {
-            usersData.forEach(user => {
-                userMap[user.tg_id] = user;
-            });
-        }
-
-        // Enrich the transactions with User Data
-        const enrichedWithdrawals = (pendingWithdrawalsData || []).map(tx => ({
-            ...tx,
-            display_name: userMap[tx.user_id]?.display_name || 'Unknown User',
-            phone: userMap[tx.user_id]?.phone || 'No Phone'
-        }));
-
-        const enrichedDeposits = (completedDepositsData || []).map(tx => ({
-            ...tx,
-            display_name: userMap[tx.user_id]?.display_name || 'Unknown User',
-            phone: userMap[tx.user_id]?.phone || 'No Phone'
-        }));
-
-        setPendingTxs(enrichedWithdrawals);
-        setRecentDeposits(enrichedDeposits);
-
-        // Fetch Time-Scaled Metrics
-        const { data: timeScaleTxData } = await supabase
+      // 1. Fetch Pending Withdrawals Directly
+      const { data: pendingWithdrawalsData, error: pendingErr } = await supabase
           .from('transactions')
-          .select('amount, tx_type')
-          .gte('created_at', isoStart)
-          .eq('status', 'completed');
+          .select('*')
+          .eq('tx_type', 'withdrawal')
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
 
-        const { count: gamesCount } = await supabase
-          .from('bingo_rooms')
-          .select('*', { count: 'exact', head: true })
-          .gte('created_at', isoStart);
+      if (pendingErr) console.error("Error fetching pending txs:", pendingErr);
 
-        let deposits = 0;
-        let withdrawals = 0;
+      // 2. Fetch Completed Deposits Directly
+      const { data: completedDepositsData } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('tx_type', 'deposit')
+          .eq('status', 'completed')
+          .order('created_at', { ascending: false })
+          .limit(100);
 
-        timeScaleTxData?.forEach(tx => {
-          if (tx.tx_type === 'deposit') deposits += Number(tx.amount);
-          if (tx.tx_type === 'withdrawal') withdrawals += Number(tx.amount);
-        });
+      // 3. Fetch User Details to map names and phones
+      const { data: usersData } = await supabase
+          .from('tg_users')
+          .select('tg_id, display_name, phone');
 
-        setStats({
-          deposits,
-          withdrawals,
-          gamesHosted: gamesCount || 0,
-          netFlow: deposits - withdrawals
-        });
-
-      } catch (err) {
-        console.error("Dashboard Sync Failed:", err);
-      } finally {
-        setIsLoadingData(false);
+      // Create a fast lookup map using both string and numeric representations to prevent parsing drops
+      const userMap: Record<string, any> = {};
+      if (usersData) {
+          usersData.forEach(user => {
+              if (user.tg_id) {
+                userMap[user.tg_id.toString()] = user;
+              }
+          });
       }
-    };
 
+      // Enrich the transactions with User Data safely
+      const enrichedWithdrawals = (pendingWithdrawalsData || []).map(tx => {
+          const lookupId = tx.user_id ? tx.user_id.toString() : '';
+          const match = userMap[lookupId];
+          return {
+              ...tx,
+              display_name: match?.display_name || 'Unknown User',
+              phone: match?.phone || 'No Phone'
+          };
+      });
+
+      const enrichedDeposits = (completedDepositsData || []).map(tx => {
+          const lookupId = tx.user_id ? tx.user_id.toString() : '';
+          const match = userMap[lookupId];
+          return {
+              ...tx,
+              display_name: match?.display_name || 'Unknown User',
+              phone: match?.phone || 'No Phone'
+          };
+      });
+
+      setPendingTxs(enrichedWithdrawals);
+      setRecentDeposits(enrichedDeposits);
+
+      // Fetch Time-Scaled Metrics
+      const { data: timeScaleTxData } = await supabase
+        .from('transactions')
+        .select('amount, tx_type')
+        .gte('created_at', isoStart)
+        .eq('status', 'completed');
+
+      const { count: gamesCount } = await supabase
+        .from('bingo_rooms')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', isoStart);
+
+      let deposits = 0;
+      let withdrawals = 0;
+
+      timeScaleTxData?.forEach(tx => {
+        if (tx.tx_type === 'deposit') deposits += Number(tx.amount);
+        if (tx.tx_type === 'withdrawal') withdrawals += Number(tx.amount);
+      });
+
+      setStats({
+        deposits,
+        withdrawals,
+        gamesHosted: gamesCount || 0,
+        netFlow: deposits - withdrawals
+      });
+
+    } catch (err) {
+      console.error("Dashboard Sync Failed Entirely:", err);
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  useEffect(() => {
     fetchDashboardData();
     const interval = setInterval(fetchDashboardData, 15000); 
     return () => clearInterval(interval);
@@ -184,58 +195,87 @@ export default function AdminDashboard() {
             .eq('id', txId);
             
         if (error) throw error;
+        
+        // Instant visual update instead of waiting for next sync interval
         setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
+        await fetchDashboardData();
     } catch (err) {
         console.error("Approval Failed:", err);
-        alert("Error approving transaction.");
+        alert("Error approving transaction. Open your browser console to inspect network status.");
     } finally {
         setProcessingTx(null);
     }
   };
 
-  // 🚀 DIRECT REJECT & FULL REFUND LOGIC
+  // 🚀 BULLETPROOF REJECT & FULL REFUND LOGIC
   const handleReject = async (txId: string, userId: string, amount: number) => {
     if (!window.confirm(`Are you sure you want to REJECT this transaction and REFUND ${amount} ETB to the user's wallet?`)) return;
     setProcessingTx(txId);
 
     try {
-        // 1. Fetch current user balance securely
-        const { data: userData, error: userErr } = await supabase
-            .from('tg_users')
-            .select('balance')
-            .eq('tg_id', userId)
-            .single();
+        // Try to target both biging numeric parse formats
+        const numericUserId = isNaN(Number(userId)) ? null : Number(userId);
 
-        if (userErr) throw userErr;
+        // 1. Fetch current user balance accurately matching cross-types
+        let userQuery = supabase.from('tg_users').select('balance');
+        
+        if (numericUserId !== null) {
+            userQuery = userQuery.eq('tg_id', numericUserId);
+        } else {
+            userQuery = userQuery.eq('tg_id', userId);
+        }
 
-        // 2. Calculate newly refunded balance
+        const { data: userData, error: userErr } = await userQuery.maybeSingle();
+
+        if (userErr) {
+            console.error("Supabase user retrieval error:", userErr);
+            throw userErr;
+        }
+
+        if (!userData) {
+            throw new Error(`User with Telegram ID ${userId} does not exist in the tg_users database table.`);
+        }
+
+        // 2. Process math explicitly
         const currentBalance = Number(userData.balance) || 0;
         const refundAmount = Number(amount) || 0;
         const newBalance = currentBalance + refundAmount;
 
-        // 3. Update the user's balance
-        const { error: refundErr } = await supabase
-            .from('tg_users')
-            .update({ balance: newBalance })
-            .eq('tg_id', userId);
+        // 3. Update the user's balance safely
+        let updateQuery = supabase.from('tg_users').update({ balance: newBalance });
+        if (numericUserId !== null) {
+            updateQuery = updateQuery.eq('tg_id', numericUserId);
+        } else {
+            updateQuery = updateQuery.eq('tg_id', userId);
+        }
 
-        if (refundErr) throw refundErr;
+        const { error: refundErr } = await updateQuery;
+        if (refundErr) {
+            console.error("Balance refund database rejection:", refundErr);
+            throw refundErr;
+        }
 
-        // 4. Mark transaction as rejected
+        // 4. Mark transaction status as rejected
         const { error: txErr } = await supabase
             .from('transactions')
             .update({ status: 'rejected' })
             .eq('id', txId);
 
-        if (txErr) throw txErr;
+        if (txErr) {
+            console.error("Transaction status swap failure:", txErr);
+            throw txErr;
+        }
 
-        // 5. Update local state
+        // 5. Instantly flash the local state matrix so user experiences structural feedback
         setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
-        alert(`✅ Success! Refunded ${refundAmount} ETB back to the user.`);
+        alert(`✅ Success! Refunded ${refundAmount} ETB back to user ${userId}.`);
+        
+        // Force background verification sync loop
+        await fetchDashboardData();
 
-    } catch (err) {
-        console.error("Reject and Refund Failed:", err);
-        alert("Failed to refund the user. Please check your Supabase permissions.");
+    } catch (err: any) {
+        console.error("CRITICAL COMMAND CANCELED:", err);
+        alert(`Failed to complete reject command.\n\nReason: ${err?.message || 'Check database permissions or RLS policies.'}`);
     } finally {
         setProcessingTx(null);
     }
@@ -287,7 +327,9 @@ export default function AdminDashboard() {
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
               <span className="text-emerald-500 text-[10px] font-black tracking-widest">SYSTEM ONLINE</span>
             </div>
-            <span className="text-[9px] text-neutral-600 tracking-widest">AUTHORIZED DEVICE</span>
+            <button onClick={fetchDashboardData} className="text-[10px] text-neutral-400 bg-neutral-900 border border-neutral-800 px-2 py-0.5 mt-1 rounded hover:bg-neutral-800 active:scale-95 transition-all">
+              🔄 FORCE REFRESH
+            </button>
           </div>
         </header>
 
@@ -319,6 +361,15 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        {/* Time filters */}
+        <div className="flex gap-2 bg-neutral-900/40 p-1 rounded-xl border border-neutral-800/80 w-max">
+          {(['today', 'week', 'month', 'all'] as TimeScale[]).map((scale) => (
+            <button key={scale} onClick={() => setTimeScale(scale)} className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${timeScale === scale ? 'bg-emerald-500 text-black shadow-md' : 'text-neutral-400 hover:text-white'}`}>
+              {scale}
+            </button>
+          ))}
+        </div>
+
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
           
           {/* ⚡ WITHDRAWALS: Detailed Action Queue */}
@@ -347,7 +398,7 @@ export default function AdminDashboard() {
                       {/* Accent Strip */}
                       <div className="absolute left-0 top-0 w-1.5 h-full bg-gradient-to-b from-orange-400 to-yellow-600 shadow-[0_0_15px_rgba(249,115,22,0.5)]"></div>
                       
-                      {/* Top Bar: Amount & Meta */}
+                      {/* Top Bar */}
                       <div className="flex items-center justify-between p-4 border-b border-neutral-800/80 bg-neutral-900/50">
                         <div className="flex items-center gap-3">
                           <span className="text-orange-400 font-black text-3xl drop-shadow-md">{tx.amount.toLocaleString()} ETB</span>
@@ -377,7 +428,7 @@ export default function AdminDashboard() {
                           </div>
                         </div>
 
-                        {/* Right Column: Banking Details (The new feature!) */}
+                        {/* Right Column: Banking Details */}
                         <div className="p-4 space-y-3 bg-neutral-900/20">
                             <div>
                                 <p className="text-emerald-500/70 text-[9px] font-black uppercase tracking-widest mb-1">Target Bank</p>
