@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import supabase from '@/lib/supabaseClient'; // Make sure this path is correct for your project!
+import supabase from '@/lib/supabaseClient';
 
 // 🔒 THE MASTER PASSWORD VAULT
 const MASTER_PASSWORD = "chelahebenki2026";
@@ -93,7 +93,7 @@ export default function AdminDashboard() {
       // Create a fast lookup map strictly typed to avoid Vercel build failures
       const userMap: Record<string, UserLookup> = {};
       if (usersData) {
-          usersData.forEach(user => {
+          usersData.forEach((user: any) => {
               if (user.tg_id) {
                 userMap[user.tg_id.toString()] = {
                   display_name: user.display_name,
@@ -104,24 +104,24 @@ export default function AdminDashboard() {
       }
 
       // Enrich the transactions with User Data safely
-      const enrichedWithdrawals = (pendingWithdrawalsData || []).map(tx => {
+      const enrichedWithdrawals = (pendingWithdrawalsData || []).map((tx: any) => {
           const lookupId = tx.user_id ? tx.user_id.toString() : '';
           const match = userMap[lookupId];
           return {
               ...tx,
               display_name: match?.display_name || 'Unknown User',
               phone: match?.phone || 'No Phone'
-          };
+          } as EnrichedTransaction;
       });
 
-      const enrichedDeposits = (completedDepositsData || []).map(tx => {
+      const enrichedDeposits = (completedDepositsData || []).map((tx: any) => {
           const lookupId = tx.user_id ? tx.user_id.toString() : '';
           const match = userMap[lookupId];
           return {
               ...tx,
               display_name: match?.display_name || 'Unknown User',
               phone: match?.phone || 'No Phone'
-          };
+          } as EnrichedTransaction;
       });
 
       setPendingTxs(enrichedWithdrawals);
@@ -139,6 +139,7 @@ export default function AdminDashboard() {
     fetchDashboardData();
     const interval = setInterval(fetchDashboardData, 15000); 
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isUnlocked, timeScale]);
 
   const timeAgo = (dateStr: string) => {
