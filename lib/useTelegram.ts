@@ -40,7 +40,7 @@ export function useTelegram() {
         webApp.ready();
         webApp.expand();
 
-        // 🚀 THE SECURITY FIX: Send the raw signature to our secure backend
+        // 🚀 STRICT MODE: Send the raw signature to our secure backend
         fetch('/api/auth/telegram', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -72,12 +72,9 @@ export function useTelegram() {
       // If Telegram script hasn't loaded yet, try again in 100ms
       setTimeout(() => {
         if (!initTg()) {
-          // ⚠️ LOCAL DEV FALLBACK ⚠️
-          // If the app is opened in a normal Chrome browser (not Telegram), 
-          // default to your Admin ID so you can still test the UI locally.
-          console.warn("Running outside Telegram. Using mock ID for development.");
-          setTgId(5681654051); 
-          setIsVerified(true);
+          // 🚀 THE LOCKDOWN FIX: The Admin Mock ID has been purged.
+          // If they open this in Chrome/Safari, tgId remains NULL, triggering the lockdown UI.
+          console.error("Strict Auth Enforced: App accessed outside of a verified Telegram environment.");
         }
       }, 100);
     }
