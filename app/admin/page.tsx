@@ -116,8 +116,8 @@ export default function AdminDashboard() {
           phone: userMap[tx.user_id?.toString()]?.phone || 'No Phone'
       }));
 
-      setPendingTxs(enrich(pendingWData));
-      setRecentDeposits(enrich(depositsData).filter(tx => tx.amount >= 50));
+      setPendingTxs(enrich(pendingWData || []));
+      setRecentDeposits(enrich(depositsData || []).filter(tx => tx.amount >= 50));
 
       // 6. LIVE GAMES RADAR
       const { data: liveRooms } = await supabase
