@@ -23,7 +23,18 @@ interface EnrichedTransaction {
   account_number?: string;  
 }
 
-interface BingoRoom {
+interface AdminStats {
+  total_profit: number;
+  total_wallets: number;
+  active_rooms: number;
+}
+
+interface UserLookup {
+  display_name: string | null;
+  phone: string | null;
+}
+
+interface LiveBingoGame {
   id: string;
   status: string;
   players_count?: number;
@@ -32,13 +43,6 @@ interface BingoRoom {
   pot?: number;
   ticket_price?: number;
   price?: number;
-  [key: string]: any;
-}
-
-interface AdminStats {
-  total_profit: number;
-  total_wallets: number;
-  active_rooms: number;
 }
 
 export default function AdminDashboard() {
@@ -51,16 +55,16 @@ export default function AdminDashboard() {
   
   const [pendingTxs, setPendingTxs] = useState<EnrichedTransaction[]>([]);
   const [recentDeposits, setRecentDeposits] = useState<EnrichedTransaction[]>([]);
-  const [activeGames, setActiveGames] = useState<BingoRoom[]>([]);
+  const [liveGames, setLiveGames] = useState<LiveBingoGame[]>([]);
   
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [processingTx, setProcessingTx] = useState<string | null>(null);
 
-  // 📊 SECURE RPC FETCH ENGINE
+  // 📊 DIRECT SUPABASE FETCH ENGINE
   const fetchDashboardData = async () => {
     if (!isUnlocked) return;
     setIsLoadingData(true);
-    
+
     const now = new Date();
     let startDate = new Date(0); 
     if (timeScale === 'today') startDate = new Date(now.setHours(0,0,0,0));
@@ -69,23 +73,85 @@ export default function AdminDashboard() {
     const isoStart = startDate.toISOString();
 
     try {
-      // 1. Fetch Top Stats
-      const { data: globalData } = await supabase.rpc('get_admin_stats');
-      if (globalData) setMacroStats(globalData as AdminStats);
+      // Fetch Macro Stats safely
+      const { data: globalData, error: globalErr } = await supabase.rpc('get_admin_stats');
+      if (!globalErr && globalData) setMacroStats(globalData as AdminStats);
 
-      // 2. Fetch Secure Enriched Transactions & Active Games
-      const { data: dashboardData, error } = await supabase.rpc('get_admin_dashboard_data', { p_start_date: isoStart });
-      
-      if (error) throw error;
-      
-      if (dashboardData) {
-          setPendingTxs(dashboardData.pending || []);
-          setRecentDeposits(dashboardData.recent || []);
-          setActiveGames(dashboardData.active_games || []);
+      // 1. Fetch ALL Pending Withdrawals Directly
+      const { data: pendingWithdrawalsData, error: pendingErr } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('tx_type', 'withdrawal')
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
+
+      if (pendingErr) console.error("Error fetching pending txs:", pendingErr);
+
+      // 2. Fetch Completed Deposits Directly (Linked to TimeScale)
+      const { data: completedDepositsData } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('tx_type', 'deposit')
+          .eq('status', 'completed')
+          .gte('created_at', isoStart)
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+      // 3. Fetch Live Active Bingo Games from Database
+      const { data: activeBingoRooms, error: roomsErr } = await supabase
+          .from('bingo_rooms')
+          .select('*')
+          .in('status', ['waiting', 'active', 'playing', 'open']);
+
+      if (!roomsErr && activeBingoRooms) {
+          setLiveGames(activeBingoRooms as LiveBingoGame[]);
       }
 
+      // 4. Fetch User Details to map names and phones
+      const { data: usersData } = await supabase
+          .from('tg_users')
+          .select('tg_id, display_name, phone');
+
+      // Create a fast lookup map strictly typed to avoid Vercel build failures
+      const userMap: Record<string, UserLookup> = {};
+      if (usersData) {
+          usersData.forEach((user: any) => {
+              if (user.tg_id) {
+                userMap[user.tg_id.toString().trim()] = {
+                  display_name: user.display_name,
+                  phone: user.phone
+                };
+              }
+          });
+      }
+
+      // Enrich the transactions with User Data safely
+      const enrichedWithdrawals = (pendingWithdrawalsData || []).map((tx: any) => {
+          const lookupId = tx.user_id ? tx.user_id.toString().trim() : '';
+          const match = userMap[lookupId];
+          return {
+              ...tx,
+              display_name: match?.display_name || `User (${tx.user_id})`,
+              phone: match?.phone || 'No Phone'
+          } as EnrichedTransaction;
+      });
+
+      const enrichedDeposits = (completedDepositsData || []).map((tx: any) => {
+          const lookupId = tx.user_id ? tx.user_id.toString().trim() : '';
+          const match = userMap[lookupId];
+          return {
+              ...tx,
+              display_name: match?.display_name || `User (${tx.user_id})`,
+              phone: match?.phone || 'No Phone'
+          } as EnrichedTransaction;
+      });
+
+      setPendingTxs(enrichedWithdrawals);
+      setRecentDeposits(enrichedDeposits);
+
     } catch (err) {
-      console.error("Dashboard Sync Failed:", err);
+      const error = err as Error;
+      console.error("Dashboard Sync Failed Entirely:", error.message);
     } finally {
       setIsLoadingData(false);
     }
@@ -116,34 +182,40 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🚀 SECURE APPROVAL LOGIC
+  // 🚀 DIRECT APPROVAL LOGIC
   const handleApprove = async (txId: string) => {
     if (!window.confirm("Mark this withdrawal as Approved and Paid?")) return;
     setProcessingTx(txId);
     try {
-        const { error } = await supabase.rpc('admin_approve_withdrawal', { p_tx_id: txId });
+        const { error } = await supabase
+            .from('transactions')
+            .update({ status: 'completed' })
+            .eq('id', txId);
+            
         if (error) throw error;
         
         setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
         await fetchDashboardData();
     } catch (err) {
-        console.error("Approval Failed:", err);
-        alert("Error approving transaction.");
+        const error = err as Error;
+        console.error("Approval Failed:", error.message);
+        alert("Error approving transaction. Check network status.");
     } finally {
         setProcessingTx(null);
     }
   };
 
-  // 🚀 SECURE REJECT & FULL REFUND LOGIC
+  // 🚀 BULLETPROOF RPC REJECT & FULL REFUND LOGIC
   const handleReject = async (txId: string, userId: string, amount: number) => {
     if (!window.confirm(`Are you sure you want to REJECT this transaction and REFUND ${amount} ETB to the user's wallet?`)) return;
     setProcessingTx(txId);
 
     try {
-        const { error } = await supabase.rpc('admin_reject_withdrawal', { 
-            p_tx_id: txId, 
-            p_user_id: userId.toString(), 
-            p_amount: amount 
+        // Force evaluation through the dropped and updated master RPC procedure function
+        const { error } = await supabase.rpc('admin_reject_withdrawal', {
+            p_tx_id: txId.toString(),
+            p_user_id: userId.toString(),
+            p_amount: Number(amount)
         });
 
         if (error) throw error;
@@ -153,8 +225,9 @@ export default function AdminDashboard() {
         await fetchDashboardData();
 
     } catch (err) {
-        console.error("Reject Failed:", err);
-        alert("Failed to complete reject command. Check database.");
+        const error = err as Error;
+        console.error("CRITICAL REJECT AND REFUND CANCELED:", error.message);
+        alert(`Failed to complete reject command.\n\nReason: ${error.message || 'Check database schema alignment.'}`);
     } finally {
         setProcessingTx(null);
     }
@@ -240,41 +313,41 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 🎮 LIVE BINGO SERVERS */}
-        {activeGames.length > 0 && (
-          <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl p-6 shadow-lg">
-            <h2 className="text-lg font-black tracking-widest text-white flex items-center gap-2 mb-4">
-              <span className="text-blue-500">🎮</span> LIVE ACTIVE GAMES
-            </h2>
+        {/* 🎮 LIVE BINGO SERVERS INTERFACE GRID */}
+        <section className="bg-neutral-900/40 border border-neutral-800 rounded-2xl p-6 shadow-xl">
+          <h2 className="text-sm font-black tracking-widest text-neutral-400 flex items-center gap-2 uppercase mb-4">
+            <span className="text-blue-500 text-base">🎰</span> Live Active Game Environments
+          </h2>
+          {liveGames.length === 0 ? (
+            <p className="text-xs text-neutral-500 italic font-medium tracking-wide">No active rooms currently hosting players.</p>
+          ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {activeGames.map((game, idx) => (
-                <div key={game.id || idx} className="bg-neutral-950 border border-neutral-800 rounded-xl p-4 relative overflow-hidden shadow-md">
-                  <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+              {liveGames.map((room) => (
+                <div key={room.id} className="bg-neutral-950 border border-neutral-800 rounded-xl p-4 relative overflow-hidden">
+                  <div className="absolute left-0 top-0 w-1 h-full bg-blue-500"></div>
                   <div className="flex justify-between items-center border-b border-neutral-900 pb-2 mb-3">
-                    <span className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Room: {game.id?.toString().substring(0,8) || 'N/A'}</span>
-                    <span className="text-[9px] bg-blue-500/10 text-blue-400 px-2 py-1 rounded font-black tracking-widest uppercase border border-blue-500/20">
-                      {game.status || 'Active'}
-                    </span>
+                    <span className="text-[11px] font-bold text-white tracking-wider">Room: {room.id.substring(0, 8).toUpperCase()}</span>
+                    <span className="text-[9px] font-black bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded uppercase border border-blue-500/20">{room.status}</span>
                   </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] text-neutral-500 uppercase tracking-widest font-bold">Players</span>
-                      <span className="text-white font-mono">{game.players_count || game.player_count || 0}</span>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500 text-[10px] uppercase font-bold tracking-wider">Players Joined:</span>
+                      <span className="font-bold text-white font-mono">{room.players_count ?? room.player_count ?? 0}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] text-neutral-500 uppercase tracking-widest font-bold">Current Pot</span>
-                      <span className="text-emerald-400 font-mono font-bold">{game.pot_size || game.pot || 0} ETB</span>
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500 text-[10px] uppercase font-bold tracking-wider">Accumulated Pot:</span>
+                      <span className="font-bold text-emerald-400 font-mono">{room.pot_size ?? room.pot ?? 0} ETB</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] text-neutral-500 uppercase tracking-widest font-bold">Ticket Price</span>
-                      <span className="text-amber-400 font-mono">{game.ticket_price || game.price || 0} ETB</span>
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500 text-[10px] uppercase font-bold tracking-wider">Ticket Stake:</span>
+                      <span className="font-bold text-amber-500 font-mono">{room.ticket_price ?? room.price ?? 0} ETB</span>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
-          </section>
-        )}
+          )}
+        </section>
 
         {/* Time filters */}
         <div className="flex gap-2 bg-neutral-900/40 p-1 rounded-xl border border-neutral-800/80 w-max">
@@ -310,8 +383,10 @@ export default function AdminDashboard() {
                     <motion.div key={tx.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, x: -50 }} 
                       className="bg-neutral-950 border border-neutral-800 rounded-xl flex flex-col relative overflow-hidden shadow-xl"
                     >
+                      {/* Accent Strip */}
                       <div className="absolute left-0 top-0 w-1.5 h-full bg-gradient-to-b from-orange-400 to-yellow-600 shadow-[0_0_15px_rgba(249,115,22,0.5)]"></div>
                       
+                      {/* Top Bar */}
                       <div className="flex items-center justify-between p-4 border-b border-neutral-800/80 bg-neutral-900/50">
                         <div className="flex items-center gap-3">
                           <span className="text-orange-400 font-black text-3xl drop-shadow-md">{tx.amount.toLocaleString()} ETB</span>
@@ -322,11 +397,14 @@ export default function AdminDashboard() {
                         </div>
                       </div>
 
+                      {/* Main Content Grid */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-0">
+                        
+                        {/* Left Column: Player Identity */}
                         <div className="p-4 border-b sm:border-b-0 sm:border-r border-neutral-800/80 space-y-3 bg-neutral-950">
                           <div>
                             <p className="text-neutral-600 text-[9px] font-black uppercase tracking-widest mb-1">Player Identity</p>
-                            <p className="font-bold text-white text-sm">{(tx.display_name && tx.display_name !== 'Unknown User') ? tx.display_name : tx.user_id}</p>
+                            <p className="font-bold text-white text-sm">{tx.display_name}</p>
                           </div>
                           <div>
                             <p className="text-neutral-600 text-[9px] font-black uppercase tracking-widest mb-1">Phone Link</p>
@@ -334,10 +412,11 @@ export default function AdminDashboard() {
                           </div>
                           <div>
                             <p className="text-neutral-600 text-[9px] font-black uppercase tracking-widest mb-1">Telegram UID</p>
-                            <p className="text-neutral-500 font-mono text-[10px] select-all">{tx.user_id}</p>
+                            <p className="text-neutral-500 font-mono text-[10px]">{tx.user_id}</p>
                           </div>
                         </div>
 
+                        {/* Right Column: Banking Details */}
                         <div className="p-4 space-y-3 bg-neutral-900/20">
                             <div>
                                 <p className="text-emerald-500/70 text-[9px] font-black uppercase tracking-widest mb-1">Target Bank</p>
@@ -356,6 +435,7 @@ export default function AdminDashboard() {
                         </div>
                       </div>
 
+                      {/* Action Buttons Footer */}
                       <div className="p-4 bg-neutral-900 border-t border-neutral-800">
                         {processingTx === tx.id ? (
                           <div className="w-full text-center text-xs text-orange-400 font-bold animate-pulse py-3 bg-orange-500/10 rounded-lg border border-orange-500/20 tracking-widest uppercase">
@@ -412,7 +492,7 @@ export default function AdminDashboard() {
                     <div className="flex items-end justify-between">
                        <div className="flex flex-col">
                            <span className="text-neutral-500 text-[9px] font-black uppercase tracking-widest mb-0.5">Credited To</span>
-                           <span className="text-sm text-white font-bold">{(tx.display_name && tx.display_name !== 'Unknown User') ? tx.display_name : tx.user_id}</span>
+                           <span className="text-sm text-white font-bold">{tx.display_name}</span>
                        </div>
                        <div className="text-xs font-mono text-blue-400 bg-blue-500/10 px-2 py-1 rounded border border-blue-500/20">
                            {tx.phone || 'No Phone Linked'}

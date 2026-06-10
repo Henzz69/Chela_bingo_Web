@@ -50,27 +50,17 @@ VALID_MERCHANT_ACCOUNTS = [
 ]
 
 # ---------------------------------------------------------------------------
-# ADMIN AUTHORIZATION & SECURITY LOCK
+# HARDENED ADMIN AUTHORIZATION
 # ---------------------------------------------------------------------------
 ADMIN_IDS = [5681654051]
 
 def is_admin(message) -> bool:
     """
-    STRICT SECURITY CHECK: Validates if the user is authorized to use admin commands.
-    Prevents exploitation of Telegram's anonymous admin feature in private DMs.
+    Evaluates basic UI permissions. For sensitive tasks like /credit, 
+    we use direct, un-spoofable ID validation checks.
     """
-    # 1. Checks if it's your personal explicitly whitelisted ID
     if getattr(message, 'from_user', None) and message.from_user.id in ADMIN_IDS:
         return True
-    
-    # 2. VULNERABILITY PATCH: Only allow anonymous admin checks if it's ACTUALLY a group chat. 
-    # This completely prevents normal users from spoofing the sender_chat in private DMs to steal credits.
-    if message.chat.type in ['group', 'supergroup']:
-        if getattr(message, 'sender_chat', None) and message.sender_chat.id == message.chat.id:
-            return True
-        if getattr(message, 'from_user', None) and message.from_user.id == 1087968824:
-            return True
-            
     return False
 
 if not BOT_TOKEN or BOT_TOKEN == "your_bot_token_here":
@@ -187,6 +177,7 @@ user_ref_data: dict[int, int] = {}
 STATE_IDLE              = "IDLE"
 STATE_AWAITING_DEPOSIT  = "AWAITING_DEPOSIT"
 STATE_AWAITING_TXN_SMS  = "AWAITING_TXN_SMS"
+STATE_AWAITING_WITHDRAW = "AWAITING_WITHDRAW"
 STATE_WITHDRAW_AMOUNT   = "WITHDRAW_AMOUNT"
 STATE_WITHDRAW_BANK     = "WITHDRAW_BANK"
 STATE_WITHDRAW_NAME     = "WITHDRAW_NAME"
@@ -206,7 +197,6 @@ def set_lang(chat_id: int, lang: str) -> None:
     user_lang[chat_id] = lang
 
 def can_execute_command(message, allow_group_admin=False) -> bool:
-    """Safely routes commands. Deletes public spam from regular users entirely."""
     if message.chat.type != "private":
         if allow_group_admin and is_admin(message):
             return True
@@ -359,18 +349,19 @@ def quick_amount_markup() -> InlineKeyboardMarkup:
     )
     return kb
 
+def withdraw_method_markup() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("Manual", callback_data="with_method|manual"))
+    return kb
+
 def withdraw_bank_markup() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("Telebirr", callback_data="with_bank|Telebirr")
-    )
+    kb.add(InlineKeyboardButton("Telebirr", callback_data="with_bank|Telebirr"))
     kb.add(
         InlineKeyboardButton("Bank of Abyssinia", callback_data="with_bank|Bank of Abyssinia"),
         InlineKeyboardButton("Awash Bank", callback_data="with_bank|Awash Bank")
     )
-    kb.add(
-        InlineKeyboardButton("Dashin Bank", callback_data="with_bank|Dashin Bank")
-    )
+    kb.add(InlineKeyboardButton("Dashin Bank", callback_data="with_bank|Dashin Bank"))
     return kb
 
 def withdraw_confirm_markup() -> InlineKeyboardMarkup:
@@ -433,7 +424,10 @@ def _extract_transaction_id(text: str):
             
     for word in words:
         if 8 <= len(word) <= 12:
-            if any(char.isalpha() for char in word) and any(char.isdigit() for char in word):
+            has_letter = any(char.isalpha() for char in word)
+            has_number = any(char.isdigit() for char in word)
+            
+            if has_letter and has_number:
                 return word
                 
     return None
@@ -443,12 +437,9 @@ def _extract_transaction_id(text: str):
 # ---------------------------------------------------------------------------
 @bot.message_handler(commands=["start"])
 def cmd_start(message):
-    if not can_execute_command(message, allow_group_admin=False):
-        return
+    if not can_execute_command(message, allow_group_admin=False): return
     
     chat_id = message.chat.id
-    
-    # Emergency hatch: /start ALWAYS breaks the lock and resets state
     set_state(chat_id, STATE_IDLE)
     
     parts = message.text.split()
@@ -468,7 +459,7 @@ def cmd_start(message):
             bot.send_photo(chat_id, open(banner_path, 'rb'), 
                            caption=STRINGS[lang]["welcome_back"], 
                            reply_markup=main_menu_markup(lang))
-        except Exception:
+        except:
             bot.send_message(chat_id, STRINGS[lang]["welcome_back"], reply_markup=main_menu_markup(lang))
     else:
         bot.send_message(
@@ -479,8 +470,7 @@ def cmd_start(message):
 
 @bot.message_handler(commands=["play"])
 def cmd_play(message):
-    if not can_execute_command(message, allow_group_admin=True):
-        return
+    if not can_execute_command(message, allow_group_admin=True): return
     
     chat_id = message.chat.id
     lang = get_lang(chat_id)
@@ -494,7 +484,7 @@ def cmd_play(message):
     
     welcome_text = (
         "🎰 *እንኳን ወደ Chela Bingo በደህና መጡ!* 🎉\n\n"
-        "በዚህ ግሩፕ ውስጥ አዝናኝ የቢንጎ ጨዋታዎችን፣ ዕለታዊ ጃክፖቶችን እና አዳዲስ የጨዋታ መረጃዎችን ያገኛሉ! 💸✨\n\n"
+        "በዚህ ግሩፕ ውስጥ አዝናኝ የቢንጎ ጨዋታዎችን癶 ዕለታዊ ጃክፖቶችን እና አዳዲስ የጨዋታ መረጃዎችን ያገኛሉ! 💸✨\n\n"
         "🎰 ምን ይጠብቆታል?\n"
         "🔹 ዕለታዊ ጃክፖቶች 💰\n"
         "🔹 የተለያዩ የጨዋታ አማራጮች 🎯\n"
@@ -507,13 +497,12 @@ def cmd_play(message):
         bot.send_photo(chat_id, open('banner.jpg', 'rb'), 
                        caption=welcome_text, 
                        reply_markup=kb)
-    except Exception:
+    except:
         bot.send_message(chat_id, welcome_text, reply_markup=kb)
 
 @bot.message_handler(commands=["invite"])
 def cmd_invite(message):
-    if not can_execute_command(message, allow_group_admin=False):
-        return
+    if not can_execute_command(message, allow_group_admin=False): return
     
     chat_id = message.chat.id
     lang = get_lang(chat_id)
@@ -556,8 +545,7 @@ def cmd_invite(message):
 
 @bot.message_handler(commands=["support"])
 def cmd_support(message):
-    if not can_execute_command(message, allow_group_admin=False):
-        return
+    if not can_execute_command(message, allow_group_admin=False): return
     
     chat_id = message.chat.id
     lang = get_lang(chat_id)
@@ -570,8 +558,7 @@ def cmd_support(message):
 
 @bot.message_handler(commands=["balance"])
 def cmd_balance(message):
-    if not can_execute_command(message, allow_group_admin=False):
-        return
+    if not can_execute_command(message, allow_group_admin=False): return
     
     chat_id = message.chat.id
     lang = get_lang(chat_id)
@@ -586,8 +573,7 @@ def cmd_balance(message):
 
 @bot.message_handler(commands=["deposit"])
 def cmd_deposit(message):
-    if not can_execute_command(message, allow_group_admin=False):
-        return
+    if not can_execute_command(message, allow_group_admin=False): return
     
     chat_id = message.chat.id
     lang = get_lang(chat_id)
@@ -602,8 +588,7 @@ def cmd_deposit(message):
 
 @bot.message_handler(commands=["withdraw"])
 def cmd_withdraw(message):
-    if not can_execute_command(message, allow_group_admin=False):
-        return
+    if not can_execute_command(message, allow_group_admin=False): return
     
     chat_id = message.chat.id
     lang = get_lang(chat_id)
@@ -612,9 +597,9 @@ def cmd_withdraw(message):
         bot.send_message(chat_id, STRINGS[lang]["locked_warning"], reply_markup=cancel_reply_keyboard(lang))
         return
 
-    set_state(chat_id, STATE_WITHDRAW_AMOUNT)
+    set_state(chat_id, STATE_AWAITING_WITHDRAW)
     bot.send_message(chat_id, STRINGS[lang]["cancel_instruction"], reply_markup=cancel_reply_keyboard(lang))
-    bot.send_message(chat_id, "Please send the amount to withdraw:")
+    bot.send_message(chat_id, "Choose Your Preferred withdraw Method", reply_markup=withdraw_method_markup())
 
 @bot.message_handler(commands=["testsms"])
 def cmd_testsms(message):
@@ -639,10 +624,8 @@ def cmd_testsms(message):
 @bot.message_handler(commands=["send"])
 def cmd_send_manual_banner(message):
     if not is_admin(message):
-        try:
-            bot.delete_message(message.chat.id, message.message_id)
-        except Exception:
-            pass
+        try: bot.delete_message(message.chat.id, message.message_id)
+        except Exception: pass
         return
 
     try:
@@ -671,16 +654,14 @@ def cmd_send_manual_banner(message):
         print(f"Error sending manual banner: {e}")
 
 # ---------------------------------------------------------------------------
-# SECURE /CREDIT COMMAND
+# 🛡️ UN-SPOOFABLE HARDECON PRIVATE CREDIT COMMAND SECURITY PATCH
 # ---------------------------------------------------------------------------
 @bot.message_handler(commands=["credit"])
 def cmd_credit(message):
-    """
-    Highly secured credit addition logic. Bypasses anonymous group spoofing.
-    """
     chat_id  = message.chat.id
 
-    if not is_admin(message):
+    # HARD LOCK LAYER: Strictly require direct private conversation matching your personal account ID
+    if message.chat.type != "private" or message.from_user.id not in ADMIN_IDS:
         return
 
     parts = message.text.strip().split()
@@ -690,64 +671,42 @@ def cmd_credit(message):
 
     try:
         amount = float(parts[1])
-        if amount <= 0 or amount > 50000:
-            bot.send_message(chat_id, "⚠️ Invalid amount. Must be positive and reasonable.")
+        if amount <= 0:
+            bot.send_message(chat_id, "⚠️ Value parameter must be positive numeric.")
             return
     except ValueError:
-        bot.send_message(chat_id, "⚠️ Invalid amount format.")
+        bot.send_message(chat_id, "⚠️ Invalid layout format.")
         return
 
     target_tg_id = message.from_user.id
     if len(parts) >= 3:
-        try:
-            target_tg_id = int(parts[2])
+        try: target_tg_id = int(parts[2])
         except ValueError:
-            bot.send_message(chat_id, "⚠️ Invalid target ID.")
+            bot.send_message(chat_id, "⚠️ Invalid destination identifier sequence.")
             return
 
-    if _supabase is None:
-        return
+    if _supabase is None: return
 
     try:
         real_bal, promo_bal, total_bal = _get_user_wallet(target_tg_id)
         new_bal = real_bal + amount
-        
         _supabase.table("tg_users").update({"balance": new_bal}).eq("tg_id", target_tg_id).execute()
-        
-        # Log this admin credit injection for tracing
-        _supabase.table("transactions").insert({
-            "id": str(uuid.uuid4()),
-            "user_id": str(target_tg_id),
-            "amount": amount,
-            "tx_type": "deposit",
-            "status": "completed"
-        }).execute()
-
-        bot.send_message(chat_id, f"✅ *Credited {amount:.2f} ETB* to `{target_tg_id}`.\n\n💰 *New Real Balance:* `{new_bal:.2f} ETB`")
-        
-        try:
-            bot.send_message(target_tg_id, f"🎉 *Deposit Successful!*\n\nYour account has been credited with `{amount:.2f} ETB`.")
-        except Exception:
-            pass
-        
+        bot.send_message(chat_id, f"✅ *Credited {amount:.2f} ETB* to account signature token: `{target_tg_id}`.\n\n💰 *New Real Balance Wallet Balance State:* `{new_bal:.2f} ETB`")
+        try: bot.send_message(target_tg_id, f"🎉 *Deposit Successful!*\n\nYour account has been credited with `{amount:.2f} ETB`.")
+        except Exception: pass
     except Exception as e:
-        bot.send_message(chat_id, f"❌ *Credit failed.*\n\nError: `{str(e)[:200]}`")
+        bot.send_message(chat_id, f"❌ *Command exception raised:* `{str(e)[:200]}`")
 
 # ---------------------------------------------------------------------------
 # CONTACT REGISTRATION
 # ---------------------------------------------------------------------------
 @bot.message_handler(content_types=["contact"])
 def handle_contact(message):
-    if not can_execute_command(message, allow_group_admin=False):
-        return
+    if not can_execute_command(message, allow_group_admin=False): return
     
     chat_id = message.chat.id
     contact = message.contact
     lang    = get_lang(chat_id)
-    
-    if get_state(chat_id) != STATE_IDLE:
-        bot.send_message(chat_id, STRINGS[lang]["locked_warning"], reply_markup=cancel_reply_keyboard(lang))
-        return
 
     if contact.user_id != message.from_user.id:
         bot.send_message(chat_id, STRINGS[lang]["invalid_contact"], reply_markup=registration_markup(lang))
@@ -798,8 +757,9 @@ def handle_callback(call):
     # 🚀 FIXED STATE LOCKING ENFORCEMENT
     if state != STATE_IDLE:
         is_allowed = False
-        
         if state == STATE_AWAITING_DEPOSIT and (data.startswith("dep_prov|") or data.startswith("dep_amt|")):
+            is_allowed = True
+        elif state == STATE_AWAITING_WITHDRAW and data == "with_method|manual":
             is_allowed = True
         elif state == STATE_WITHDRAW_BANK and data.startswith("with_bank|"):
             is_allowed = True
@@ -869,6 +829,11 @@ def handle_callback(call):
         bot.send_message(chat_id, "Please send the amount to withdraw:")
 
     # --- WITHDRAWAL FLOW CALLBACKS ---
+    elif data == "with_method|manual":
+        bot.answer_callback_query(call.id)
+        set_state(chat_id, STATE_WITHDRAW_AMOUNT)
+        bot.send_message(chat_id, "Please send the amount to withdraw:")
+
     elif data.startswith("with_bank|"):
         bot.answer_callback_query(call.id)
         bank = data.split("|")[1]
@@ -906,7 +871,6 @@ def handle_callback(call):
                 ref = "cN5" + str(uuid.uuid4().hex)[:7].upper()
                 
                 _supabase.table("transactions").insert({
-                    "id": str(uuid.uuid4()),
                     "user_id": str(call.from_user.id),
                     "amount": amount,
                     "tx_type": "withdrawal",
@@ -927,10 +891,10 @@ def handle_callback(call):
         invite_text = (
             "💥 *ልዩ የቼላ ቢንጎ ቅናሽ!* 💥🤝🤑\n"
             "እንኳን ደህና መጡ ወደ አዲሱ እና ትልቁ የጋባዥነት ፕሮግራማችን! 👑✨\n"
-            "💸 *5 ጓደኞችን ይጋብዙ፣ ወዲያውኑ 50 ETB ይውሰዱ!* 💸💎\n\n"
+            "💸 *5 ጓደኞችን ይጋብዙ፣ ወዲያውኑ 50 ETB ይውሰዘዱ!* 💸💎\n\n"
             "ይህ ለተወሰነ ጊዜ ብቻ የሚቆይ ነው፣ አሁኑኑ ተጠቀሙበት።\n"
             "5 ሰዎች ሲመዘገቡ ወዲያውኑ 50 ETB የቼላ ቢንጎ አካውንት ላይ ይጨመራል።\n\n"
-            "በተጨማሪም የጨላ ቢን አባላት የሚከተሉትን ጥቅሞች ያገኛሉ፡\n"
+            "በተጨማሪም የጨላ ቢንጎ አባላት የሚከተሉትን ጥቅሞች ያገኛሉ፡\n"
             "🏆 ዕለታዊ ሽልማቶች\n"
             "🎰 የጨዋታ አማራጮች\n"
             "🤝 የማህበረሰብ ውይይት\n\n"
@@ -961,10 +925,8 @@ def handle_text(message):
     # Public group text cleanup rules
     if message.chat.type != "private":
         if not is_admin(message):
-            try:
-                bot.delete_message(message.chat.id, message.message_id)
-            except Exception:
-                pass
+            try: bot.delete_message(message.chat.id, message.message_id)
+            except Exception: pass
         return
 
     chat_id = message.chat.id
@@ -984,8 +946,7 @@ def handle_text(message):
         try:
             clean_text_amount = text.replace(',', '')
             amount = float(clean_text_amount)
-            if amount <= 0:
-                raise ValueError
+            if amount <= 0: raise ValueError
         except ValueError:
             bot.send_message(chat_id, STRINGS[lang]["invalid_amount"])
             return
@@ -1033,7 +994,6 @@ def handle_text(message):
     # 🚀 X-RAY VERIFICATION ENGINE
     if state == STATE_AWAITING_TXN_SMS:
         set_state(chat_id, STATE_IDLE)
-        
         extracted_id = _extract_transaction_id(text)
         
         if not extracted_id:
@@ -1057,15 +1017,10 @@ def handle_text(message):
         wait_msg = bot.send_message(chat_id, STRINGS[lang]["checking_api"])
         url = "https://verifyapi.leulzenebe.pro/verify"
         payload = {"reference": clean_txn_id}
-        headers = {
-            "x-api-key": VERIFIER_API_KEY,
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        }
+        headers = {"x-api-key": VERIFIER_API_KEY, "Content-Type": "application/json", "Accept": "application/json"}
 
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=20)
-            
             if response.status_code != 200:
                 _release_transaction(clean_txn_id)
                 bot.delete_message(chat_id, wait_msg.message_id)
@@ -1098,7 +1053,6 @@ def handle_text(message):
                 if valid_name in receiver_name:
                     is_valid_destination = True
                     break
-            
             if not is_valid_destination:
                 for valid_account in VALID_MERCHANT_ACCOUNTS:
                     if valid_account[-4:] in receiver_account:
@@ -1115,24 +1069,13 @@ def handle_text(message):
             if verified_amount >= expected_amount and verified_amount > 0:
                 real_bal, promo_bal, total_bal = _get_user_wallet(message.from_user.id)
                 new_balance = real_bal + verified_amount
-                
                 if _supabase is not None:
                     _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
-                    _supabase.table("transactions").insert({
-                        "id": str(uuid.uuid4()),
-                        "user_id": str(message.from_user.id),
-                        "amount": verified_amount,
-                        "tx_type": "deposit",
-                        "status": "completed"
-                    }).execute()
-
+                    _supabase.table("transactions").insert({"user_id": str(message.from_user.id), "amount": verified_amount, "tx_type": "deposit", "status": "completed"}).execute()
                 bot.delete_message(chat_id, wait_msg.message_id)
                 bot.send_message(chat_id, STRINGS[lang]["api_success"].format(verified_amount), reply_markup=remove_keyboard())
-                
-                try:
-                    bot.send_message(ADMIN_IDS[0], f"🟢 *AUTOMATED DEPOSIT SUCCESS*\nUser ID: `{message.from_user.id}`\nRef: `{clean_txn_id}`\nCredited: `{verified_amount} ETB`")
-                except Exception:
-                    pass
+                try: bot.send_message(ADMIN_IDS[0], f"🟢 *AUTOMATED DEPOSIT SUCCESS*\nUser ID: `{message.from_user.id}`\nRef: `{clean_txn_id}`\nCredited: `{verified_amount} ETB`")
+                except Exception: pass
             else:
                 _release_transaction(clean_txn_id)
                 bot.delete_message(chat_id, wait_msg.message_id)
@@ -1142,24 +1085,22 @@ def handle_text(message):
             _release_transaction(clean_txn_id)
             bot.delete_message(chat_id, wait_msg.message_id)
             bot.send_message(chat_id, STRINGS[lang]["api_error"], reply_markup=remove_keyboard())
-        except Exception as e:
+        except Exception:
             _release_transaction(clean_txn_id)
             if 'wait_msg' in locals():
-                try:
-                    bot.delete_message(chat_id, wait_msg.message_id)
-                except Exception:
-                    pass
+                try: bot.delete_message(chat_id, wait_msg.message_id)
+                except Exception: pass
             bot.send_message(chat_id, STRINGS[lang]["api_error"], reply_markup=remove_keyboard())
 
         bot.send_message(chat_id, "Main Menu:", reply_markup=main_menu_markup(lang))
         return
 
+    # 🚀 DEPOSIT AMOUNT HANDLER
     if state == STATE_AWAITING_DEPOSIT:
         try:
             clean_text_amount = text.replace(',', '')
             amount = float(clean_text_amount)
-            if amount <= 0:
-                raise ValueError
+            if amount <= 0: raise ValueError
         except ValueError:
             bot.send_message(chat_id, STRINGS[lang]["invalid_amount"])
             return
@@ -1181,7 +1122,6 @@ def handle_text(message):
 
     if state == STATE_IDLE:
         bot.send_message(chat_id, "Please use the menu below:", reply_markup=main_menu_markup(lang))
-
 
 if __name__ == "__main__":
     print(f"--- CHELA Bingo Bot Starting ---")
