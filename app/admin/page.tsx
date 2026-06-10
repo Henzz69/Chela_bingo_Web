@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+// ✅ FIX: Removed the curly braces here
 import supabase from '@/lib/supabaseClient';
 
 // 🔒 THE MASTER PASSWORD VAULT
@@ -87,11 +88,11 @@ export default function AdminDashboard() {
 
       if (pendingErr) console.error("Error fetching pending txs:", pendingErr);
 
-      // 2. Fetch Completed Deposits, Refunds, and Admin Credits Directly
+      // 2. Fetch Completed Deposits Directly (Linked to TimeScale)
       const { data: completedDepositsData } = await supabase
           .from('transactions')
           .select('*')
-          .in('tx_type', ['deposit', 'refund', 'admin_credit'])
+          .eq('tx_type', 'deposit')
           .eq('status', 'completed')
           .gte('created_at', isoStart)
           .order('created_at', { ascending: false })
@@ -215,6 +216,7 @@ export default function AdminDashboard() {
     setProcessingTx(txId);
 
     try {
+        // Force evaluation through the dropped and updated master RPC procedure function
         const { error } = await supabase.rpc('admin_reject_withdrawal', {
             p_tx_id: txId.toString(),
             p_user_id: userId.toString(),
