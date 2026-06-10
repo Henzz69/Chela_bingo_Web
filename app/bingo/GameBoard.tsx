@@ -16,14 +16,16 @@ const MASTER_BOARD_ROWS = Array.from({ length: 15 }, (_, rowIndex) => [
 interface Props { tgId: number; }
 
 function IsolatedCountdown({ isReadyToStart, gameStatus }: { isReadyToStart: boolean, gameStatus: string }) {
-  const [countdownStart, setCountdownStart] = useState<number>(30);
+  // 🚀 SYNCED TO PYTHON ENGINE: 50 seconds
+  const [countdownStart, setCountdownStart] = useState<number>(50);
 
   useEffect(() => {
     if (gameStatus === 'waiting' && isReadyToStart) {
       const interval = setInterval(() => { setCountdownStart((prev) => (prev > 0 ? prev - 1 : 0)); }, 1000);
       return () => clearInterval(interval);
     } else if (gameStatus !== 'waiting') {
-      setCountdownStart(30);
+      // 🚀 RESET TO 50s
+      setCountdownStart(50);
     }
   }, [gameStatus, isReadyToStart]);
 
@@ -108,7 +110,8 @@ export default function BingoGameBoard({ tgId }: Props) {
   const currentPot = (currentRoom.entry_fee * playerCount) * (1 - HOUSE_EDGE);
 
   return (
-    <div className={`w-full h-[100dvh] overflow-hidden bg-[#F0FDF4] dark:bg-[#042014] text-[#022C22] dark:text-white flex flex-col pt-safe select-none relative transition-colors duration-500 ${theme === 'dark' ? 'dark' : ''}`}>
+    // 🚀 TAILWIND FIX: h-dvh canonical class
+    <div className={`w-full h-dvh overflow-hidden bg-[#F0FDF4] dark:bg-[#042014] text-[#022C22] dark:text-white flex flex-col pt-safe select-none relative transition-colors duration-500 ${theme === 'dark' ? 'dark' : ''}`}>
       
       <nav className="shrink-0 bg-white dark:bg-[#0a4a2e] border-b border-[#22C55E]/20 dark:border-white/10 px-2 py-2 transition-colors">
         <div className="flex gap-1.5 overflow-x-auto scrollbar-hide snap-x pb-1">
@@ -120,7 +123,8 @@ export default function BingoGameBoard({ tgId }: Props) {
             { label: 'Stake', value: currentRoom.entry_fee },
             { label: 'Call', value: drawnNumbers.length },
           ].map((stat, idx) => (
-            <div key={idx} className="shrink-0 snap-start bg-[#DCFCE7] dark:bg-[#063320] border border-[#22C55E]/30 dark:border-white/5 rounded px-2.5 py-1 text-center min-w-[50px] transition-colors">
+            // 🚀 TAILWIND FIX: min-w-12.5 canonical class
+            <div key={idx} className="shrink-0 snap-start bg-[#DCFCE7] dark:bg-[#063320] border border-[#22C55E]/30 dark:border-white/5 rounded px-2.5 py-1 text-center min-w-12.5 transition-colors">
               <div className="text-[9px] text-[#064E3B]/60 dark:text-white/50 uppercase tracking-wider leading-tight">{stat.label}</div>
               <div className="text-[11px] font-black text-green-600 dark:text-green-400 leading-tight">{stat.value}</div>
             </div>
@@ -238,7 +242,8 @@ export default function BingoGameBoard({ tgId }: Props) {
                           animate={{ scale: 1, y: 0, opacity: 1, rotate: 0 }} 
                           exit={{ scale: 0.8, opacity: 0, filter: "blur(2px)" }}
                           transition={{ type: "spring", stiffness: 450, damping: 18, mass: 1.2 }}
-                          className="mx-auto w-14 h-14 sm:w-16 sm:h-16 bg-gradient-to-br from-yellow-300 to-orange-400 dark:from-yellow-400 dark:to-orange-500 text-black rounded-full flex flex-col items-center justify-center shadow-[0_5px_15px_rgba(250,204,21,0.4)] dark:shadow-[0_0_20px_rgba(250,204,21,0.6)] border border-white/40 dark:border-white/20">
+                          // 🚀 TAILWIND FIX: bg-linear-to-br canonical class
+                          className="mx-auto w-14 h-14 sm:w-16 sm:h-16 bg-linear-to-br from-yellow-300 to-orange-400 dark:from-yellow-400 dark:to-orange-500 text-black rounded-full flex flex-col items-center justify-center shadow-[0_5px_15px_rgba(250,204,21,0.4)] dark:shadow-[0_0_20px_rgba(250,204,21,0.6)] border border-white/40 dark:border-white/20">
                           <span className="text-[9px] sm:text-[11px] font-black opacity-80 leading-none">{columnLetter(lastDrawn)}</span>
                           <span className="text-2xl sm:text-3xl font-black leading-none mt-0.5">{lastDrawn}</span>
                         </motion.div>
@@ -277,7 +282,7 @@ export default function BingoGameBoard({ tgId }: Props) {
                 return (
                   <motion.button key={idx} onClick={() => daubCell(idx)} disabled={!isClickable && !isFree} whileTap={isClickable ? { scale: 0.85 } : {}}
                     className={`touch-manipulation w-full h-full rounded-md flex flex-col items-center justify-center font-black text-lg sm:text-xl transition-all duration-300 select-none relative overflow-hidden
-                      ${isFree ? 'bg-gradient-to-br from-green-400 to-green-600 dark:from-green-500 dark:to-green-600 text-white shadow-inner'
+                      ${isFree ? 'bg-linear-to-br from-green-400 to-green-600 dark:from-green-500 dark:to-green-600 text-white shadow-inner' // 🚀 TAILWIND FIX
                         : isDaubed ? isWinLine ? 'bg-yellow-400 text-black shadow-[0_0_15px_rgba(250,204,21,0.6)] dark:shadow-[0_0_15px_rgba(250,204,21,0.8)] scale-105 z-10 ring-2 ring-white'
                                                : 'bg-green-500 text-white shadow-inner opacity-90'
                           : showPulse ? 'bg-white dark:bg-[#063320] border-2 border-green-500 dark:border-green-400 text-green-600 dark:text-green-300 cursor-pointer animate-pulse shadow-[inset_0_0_15px_rgba(34,197,94,0.15)] dark:shadow-[inset_0_0_15px_rgba(34,197,94,0.3)]'
@@ -301,7 +306,8 @@ export default function BingoGameBoard({ tgId }: Props) {
 
       <footer className="shrink-0 px-2 pb-2 flex flex-col gap-2">
         <button onPointerDown={handleClaimWin} onClick={handleClaimWin} disabled={isClaiming}
-          className={`w-full py-3 sm:py-4 rounded-xl font-black text-xl uppercase tracking-widest transition-all duration-300 touch-manipulation bg-gradient-to-b from-yellow-300 to-orange-400 dark:from-yellow-400 dark:to-orange-500 text-black shadow-[0_5px_20px_rgba(250,204,21,0.3)] dark:shadow-[0_0_20px_rgba(250,204,21,0.4)] hover:shadow-[0_5px_30px_rgba(250,204,21,0.5)] dark:hover:shadow-[0_0_30px_rgba(250,204,21,0.6)] active:scale-95 border-2 border-yellow-200 dark:border-yellow-200 ${isClaiming ? 'opacity-70 cursor-wait' : ''}`}
+          // 🚀 TAILWIND FIX: bg-linear-to-b canonical class
+          className={`w-full py-3 sm:py-4 rounded-xl font-black text-xl uppercase tracking-widest transition-all duration-300 touch-manipulation bg-linear-to-b from-yellow-300 to-orange-400 dark:from-yellow-400 dark:to-orange-500 text-black shadow-[0_5px_20px_rgba(250,204,21,0.3)] dark:shadow-[0_0_20px_rgba(250,204,21,0.4)] hover:shadow-[0_5px_30px_rgba(250,204,21,0.5)] dark:hover:shadow-[0_0_30px_rgba(250,204,21,0.6)] active:scale-95 border-2 border-yellow-200 dark:border-yellow-200 ${isClaiming ? 'opacity-70 cursor-wait' : ''}`}
         >
           {isClaiming ? 'Claiming...' : 'BINGO!'}
         </button>
@@ -349,7 +355,8 @@ export default function BingoGameBoard({ tgId }: Props) {
                   {currentRoom?.winning_card_snapshot && currentRoom.winning_card_snapshot.grid && (
                     <div className="mb-6 bg-white dark:bg-[#042014] p-3 rounded-xl border border-[#22C55E]/20 dark:border-white/5 shadow-inner">
                       <p className="text-[9px] text-[#064E3B]/50 dark:text-white/40 uppercase tracking-widest mb-2 font-black">Winning Card Proof</p>
-                      <div className="grid grid-cols-5 gap-1 max-w-[140px] mx-auto">
+                      {/* 🚀 TAILWIND FIX: max-w-35 canonical class */}
+                      <div className="grid grid-cols-5 gap-1 max-w-35 mx-auto">
                         {currentRoom.winning_card_snapshot.grid.map((num: number, idx: number) => {
                           const isDaubed = currentRoom.winning_card_snapshot?.daubed?.includes(idx);
                           const isFree = idx === 12;

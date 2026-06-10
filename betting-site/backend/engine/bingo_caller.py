@@ -2,7 +2,7 @@
 Bingo Caller — Multiplayer Batching Engine (Bulletproof Edition)
 ==============================================================
 - MIN_PLAYERS: 2
-- COUNTDOWN_SECONDS: 30
+- COUNTDOWN_SECONDS: 50
 - DOOR_LOCK_SECONDS: 5
 - Failsafe execution loops to prevent hanging
 """
@@ -30,7 +30,7 @@ sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ── Config ────────────────────────────────────────────────────
 MIN_PLAYERS           = 2   
-COUNTDOWN_SECONDS     = 30  
+COUNTDOWN_SECONDS     = 50  # 🚀 UPDATED: Extended lobby boarding window for max 100 players
 DOOR_LOCK_SECONDS     = 5   
 DRAW_INTERVAL         = 3   
 TICK_INTERVAL         = 1   
@@ -57,7 +57,6 @@ def get_running_games_count(entry_fee: float) -> int:
 
 def get_player_count(room_id: str) -> int:
     try:
-        # 🚀 THE FIX: We check for status 'ready' to avoid the .not_() crash!
         res = sb.table("bingo_cards").select("id", count="exact").eq("room_id", room_id).eq("status", "ready").execute()
         return res.count or 0
     except Exception as e: 
@@ -105,19 +104,18 @@ def process_waiting_rooms():
 
         # 2. Server is Full
         if running_count >= MAX_CONCURRENT_GAMES:
-            if int(time.time()) % 10 == 0:  # Only log queue every 10 seconds to avoid spam
+            if int(time.time()) % 10 == 0:  # Avoid spamming logs
                 log(f"🛑 QUEUED: Room {room_id[:8]} has {player_count} players but server is full.")
             continue
 
-        # 3. WE HAVE 2+ PLAYERS! Start the engine clock
+        # 3. Valid Matchmaking State!
         if room_id not in _boarding_start_times:
             _boarding_start_times[room_id] = time.time()
-            log(f"⏰ Room {room_id[:8]} hit minimum players! 30-Second boarding phase started.")
+            log(f"⏰ Room {room_id[:8]} hit minimum players! {COUNTDOWN_SECONDS}-Second boarding phase started.")
 
         elapsed = time.time() - _boarding_start_times[room_id]
         
         if elapsed >= COUNTDOWN_SECONDS:
-            # Time is up! Lock the doors!
             try:
                 sb.table("bingo_rooms").update({
                     "status": "countdown",
@@ -127,7 +125,7 @@ def process_waiting_rooms():
                 log(f"🟡 Room {room_id[:8]} → DOORS LOCKED ({player_count} players).")
                 _boarding_start_times.pop(room_id, None)
 
-                # Spawn new lobby
+                # Spawn subsequent blank lobby container
                 new_room = {
                     "status": "waiting",
                     "entry_fee": entry_fee,
@@ -140,7 +138,6 @@ def process_waiting_rooms():
         else:
             remaining = int(COUNTDOWN_SECONDS - elapsed)
             if remaining % 5 == 0 and remaining > 0: 
-                # Use a fast print to avoid IO blocking
                 print(f"[ENGINE {now_utc().strftime('%H:%M:%S')}] ⏳ Room {room_id[:8]} boarding phase ends in {remaining}s... ({player_count}/100 players joined)")
 
 # ══════════════════════════════════════════════════════════════
@@ -251,10 +248,8 @@ def main():
             process_countdown_rooms()
             process_active_rooms()
         except Exception as e:
-            # 🚀 THE WATCHDOG: Prevents the script from dying if a silent error occurs
             log(f"[FATAL WATCHDOG] Main loop error caught: {e}")
         
-        # Absolute sleep to prevent CPU spiking
         time.sleep(TICK_INTERVAL)
 
 if __name__ == "__main__":
