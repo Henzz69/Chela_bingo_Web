@@ -85,6 +85,13 @@ export default function AdminDashboard() {
   const fetchDashboardData = async () => {
     if (!isUnlocked) return;
     setIsLoadingData(true);
+    
+    const now = new Date();
+    let startDate = new Date(0); 
+    if (timeScale === 'today') startDate = new Date(now.setHours(0,0,0,0));
+    if (timeScale === 'week') startDate = new Date(now.setDate(now.getDate() - 7));
+    if (timeScale === 'month') startDate = new Date(now.setDate(now.getDate() - 30));
+    const isoStart = startDate.toISOString();
 
     try {
       // Fetch Macro Stats safely
@@ -103,12 +110,13 @@ export default function AdminDashboard() {
 
       if (pendingErr) console.error("Error fetching pending txs:", pendingErr);
 
-      // 2. Fetch Completed Deposits Directly (Time Filter REMOVED so old data always shows)
+      // 2. Fetch Completed Ledger Items (Strict Filter: No Negatives!)
       const { data: completedDepositsData } = await supabase
           .from('transactions')
           .select('*')
           .in('tx_type', ['deposit', 'refund', 'admin_credit'])
           .eq('status', 'completed')
+          .gt('amount', 0) // Prevents old broken negative test records from loading
           .order('created_at', { ascending: false })
           .limit(100);
 
@@ -127,7 +135,7 @@ export default function AdminDashboard() {
           .from('tg_users')
           .select('tg_id, display_name, phone');
 
-      // Create a fast lookup map strictly typed to avoid Vercel build failures
+      // Create a fast lookup map strictly typed
       const userMap: Record<string, UserLookup> = {};
       if (usersData) {
           (usersData as DBUser[]).forEach((user) => {
@@ -140,7 +148,7 @@ export default function AdminDashboard() {
           });
       }
 
-      // Enrich the transactions with User Data safely
+      // Enrich the withdrawals
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const enrichedWithdrawals = ((pendingWithdrawalsData as DBTransaction[]) || []).map((tx: any) => {
           const lookupId = tx.user_id ? tx.user_id.toString().trim() : '';
@@ -152,16 +160,23 @@ export default function AdminDashboard() {
           } as EnrichedTransaction;
       });
 
+      // Enrich the deposits AND strictly filter out test data under 50 ETB visually
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const enrichedDeposits = ((completedDepositsData as DBTransaction[]) || []).map((tx: any) => {
-          const lookupId = tx.user_id ? tx.user_id.toString().trim() : '';
-          const match = userMap[lookupId];
-          return {
-              ...tx,
-              display_name: match?.display_name || `User (${tx.user_id})`,
-              phone: match?.phone || 'No Phone'
-          } as EnrichedTransaction;
-      });
+      const enrichedDeposits = ((completedDepositsData as DBTransaction[]) || [])
+          .filter((tx) => {
+              // Only hide small amounts if they are standard deposits. Keep small refunds/credits just in case.
+              if (tx.tx_type === 'deposit' && tx.amount < 50) return false;
+              return true;
+          })
+          .map((tx: any) => {
+              const lookupId = tx.user_id ? tx.user_id.toString().trim() : '';
+              const match = userMap[lookupId];
+              return {
+                  ...tx,
+                  display_name: match?.display_name || `User (${tx.user_id})`,
+                  phone: match?.phone || 'No Phone'
+              } as EnrichedTransaction;
+          });
 
       setPendingTxs(enrichedWithdrawals);
       setRecentDeposits(enrichedDeposits);
@@ -211,7 +226,6 @@ export default function AdminDashboard() {
             
         if (error) throw error;
         
-        // Instant visual update instead of waiting for next sync interval
         setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
         await fetchDashboardData();
     } catch (err) {
@@ -471,7 +485,7 @@ export default function AdminDashboard() {
           <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg flex flex-col h-[700px]">
             <div className="bg-neutral-900 border-b border-neutral-800 px-6 py-4 flex justify-between items-center shrink-0">
               <h2 className="text-lg font-black tracking-widest text-white flex items-center gap-2">
-                <span className="text-emerald-500">📥</span> SUCCESSFUL DEPOSITS
+                <span className="text-emerald-500">📥</span> CASH INFLOW LEDGER
               </h2>
               <span className="bg-emerald-500/10 text-emerald-500 text-[10px] font-bold px-3 py-1.5 rounded border border-emerald-500/20 uppercase shadow-[0_0_10px_rgba(16,185,129,0.2)]">
                 Last 100
@@ -508,12 +522,14 @@ export default function AdminDashboard() {
                       badgeText = "MANUAL CREDIT";
                   }
 
+                  const displayAmount = Math.abs(tx.amount).toLocaleString();
+
                   return (
                     <div key={tx.id} className="bg-neutral-950 border border-neutral-800/80 p-4 rounded-xl flex flex-col gap-3 transition-colors relative overflow-hidden group">
                       <div className={`absolute left-0 top-0 w-1 h-full ${sidebarColor} transition-colors`}></div>
                       
                       <div className="flex items-center justify-between border-b border-neutral-800/50 pb-2">
-                        <div className={`${textColor} font-black text-xl drop-shadow-sm`}>+{tx.amount.toLocaleString()} ETB</div>
+                        <div className={`${textColor} font-black text-xl drop-shadow-sm`}>+{displayAmount} ETB</div>
                         <div className="text-right flex flex-col items-end">
                           <div className="text-[10px] text-neutral-400 tracking-widest uppercase font-bold">{timeAgo(tx.created_at)}</div>
                           <div className={`text-[9px] px-1.5 py-0.5 rounded mt-1 font-black tracking-widest border ${badgeBg}`}>
