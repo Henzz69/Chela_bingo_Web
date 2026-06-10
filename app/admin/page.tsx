@@ -34,17 +34,6 @@ interface UserLookup {
   phone: string | null;
 }
 
-interface LiveBingoGame {
-  id: string;
-  status: string;
-  players_count?: number;
-  player_count?: number;
-  pot_size?: number;
-  pot?: number;
-  ticket_price?: number;
-  price?: number;
-}
-
 export default function AdminDashboard() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [passInput, setPassInput] = useState('');
@@ -55,7 +44,6 @@ export default function AdminDashboard() {
   
   const [pendingTxs, setPendingTxs] = useState<EnrichedTransaction[]>([]);
   const [recentDeposits, setRecentDeposits] = useState<EnrichedTransaction[]>([]);
-  const [liveGames, setLiveGames] = useState<LiveBingoGame[]>([]);
   
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [processingTx, setProcessingTx] = useState<string | null>(null);
@@ -65,19 +53,12 @@ export default function AdminDashboard() {
     if (!isUnlocked) return;
     setIsLoadingData(true);
 
-    const now = new Date();
-    let startDate = new Date(0); 
-    if (timeScale === 'today') startDate = new Date(now.setHours(0,0,0,0));
-    if (timeScale === 'week') startDate = new Date(now.setDate(now.getDate() - 7));
-    if (timeScale === 'month') startDate = new Date(now.setDate(now.getDate() - 30));
-    const isoStart = startDate.toISOString();
-
     try {
       // Fetch Macro Stats safely
       const { data: globalData, error: globalErr } = await supabase.rpc('get_admin_stats');
       if (!globalErr && globalData) setMacroStats(globalData as AdminStats);
 
-      // 1. Fetch ALL Pending Withdrawals Directly
+      // 1. Fetch ALL Pending Withdrawals Directly (Old data will now show)
       const { data: pendingWithdrawalsData, error: pendingErr } = await supabase
           .from('transactions')
           .select('*')
@@ -87,27 +68,16 @@ export default function AdminDashboard() {
 
       if (pendingErr) console.error("Error fetching pending txs:", pendingErr);
 
-      // 2. Fetch Completed Deposits Directly (Linked to TimeScale)
+      // 2. Fetch Completed Deposits Directly (Always pulls last 100)
       const { data: completedDepositsData } = await supabase
           .from('transactions')
           .select('*')
           .eq('tx_type', 'deposit')
           .eq('status', 'completed')
-          .gte('created_at', isoStart)
           .order('created_at', { ascending: false })
           .limit(100);
 
-      // 3. Fetch Live Active Bingo Games from Database
-      const { data: activeBingoRooms, error: roomsErr } = await supabase
-          .from('bingo_rooms')
-          .select('*')
-          .in('status', ['waiting', 'active', 'playing', 'open']);
-
-      if (!roomsErr && activeBingoRooms) {
-          setLiveGames(activeBingoRooms as LiveBingoGame[]);
-      }
-
-      // 4. Fetch User Details to map names and phones
+      // 3. Fetch User Details to map names and phones
       const { data: usersData } = await supabase
           .from('tg_users')
           .select('tg_id, display_name, phone');
@@ -115,9 +85,10 @@ export default function AdminDashboard() {
       // Create a fast lookup map strictly typed to avoid Vercel build failures
       const userMap: Record<string, UserLookup> = {};
       if (usersData) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           usersData.forEach((user: any) => {
               if (user.tg_id) {
-                userMap[user.tg_id.toString().trim()] = {
+                userMap[user.tg_id.toString()] = {
                   display_name: user.display_name,
                   phone: user.phone
                 };
@@ -126,8 +97,9 @@ export default function AdminDashboard() {
       }
 
       // Enrich the transactions with User Data safely
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const enrichedWithdrawals = (pendingWithdrawalsData || []).map((tx: any) => {
-          const lookupId = tx.user_id ? tx.user_id.toString().trim() : '';
+          const lookupId = tx.user_id ? tx.user_id.toString() : '';
           const match = userMap[lookupId];
           return {
               ...tx,
@@ -136,8 +108,9 @@ export default function AdminDashboard() {
           } as EnrichedTransaction;
       });
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const enrichedDeposits = (completedDepositsData || []).map((tx: any) => {
-          const lookupId = tx.user_id ? tx.user_id.toString().trim() : '';
+          const lookupId = tx.user_id ? tx.user_id.toString() : '';
           const match = userMap[lookupId];
           return {
               ...tx,
@@ -194,6 +167,7 @@ export default function AdminDashboard() {
             
         if (error) throw error;
         
+        // Instant visual update instead of waiting for next sync interval
         setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
         await fetchDashboardData();
     } catch (err) {
@@ -205,29 +179,54 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🚀 BULLETPROOF RPC REJECT & FULL REFUND LOGIC
+  // 🚀 BULLETPROOF REJECT & FULL REFUND LOGIC
   const handleReject = async (txId: string, userId: string, amount: number) => {
     if (!window.confirm(`Are you sure you want to REJECT this transaction and REFUND ${amount} ETB to the user's wallet?`)) return;
     setProcessingTx(txId);
 
     try {
-        // Force evaluation through the dropped and updated master RPC procedure function
-        const { error } = await supabase.rpc('admin_reject_withdrawal', {
-            p_tx_id: txId.toString(),
-            p_user_id: userId.toString(),
-            p_amount: Number(amount)
-        });
+        const numericUserId = isNaN(Number(userId)) ? null : Number(userId);
+        const searchId = numericUserId !== null ? numericUserId : userId;
 
-        if (error) throw error;
+        // 1. Fetch current user balance accurately
+        const { data: userData, error: userErr } = await supabase
+            .from('tg_users')
+            .select('balance')
+            .eq('tg_id', searchId)
+            .single();
+
+        if (userErr) throw userErr;
+        if (!userData) throw new Error(`User with Telegram ID ${userId} does not exist.`);
+
+        // 2. Process math explicitly
+        const currentBalance = Number(userData.balance) || 0;
+        const refundAmount = Number(amount) || 0;
+        const newBalance = currentBalance + refundAmount;
+
+        // 3. Update the user's balance safely
+        const { error: refundErr } = await supabase
+            .from('tg_users')
+            .update({ balance: newBalance })
+            .eq('tg_id', searchId);
+
+        if (refundErr) throw refundErr;
+
+        // 4. Mark transaction status as rejected
+        const { error: txErr } = await supabase
+            .from('transactions')
+            .update({ status: 'rejected' })
+            .eq('id', txId);
+
+        if (txErr) throw txErr;
 
         setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
-        alert(`✅ Success! Refunded ${amount} ETB back to user.`);
+        alert(`✅ Success! Refunded ${refundAmount} ETB back to user.`);
         await fetchDashboardData();
 
     } catch (err) {
         const error = err as Error;
-        console.error("CRITICAL REJECT AND REFUND CANCELED:", error.message);
-        alert(`Failed to complete reject command.\n\nReason: ${error.message || 'Check database schema alignment.'}`);
+        console.error("CRITICAL COMMAND CANCELED:", error.message);
+        alert(`Failed to complete reject command.\n\nReason: ${error.message || 'Check database permissions.'}`);
     } finally {
         setProcessingTx(null);
     }
@@ -312,42 +311,6 @@ export default function AdminDashboard() {
             <p className="text-orange-400/60 text-[10px] mt-2 uppercase tracking-widest">Games playing or waiting</p>
           </div>
         </div>
-
-        {/* 🎮 LIVE BINGO SERVERS INTERFACE GRID */}
-        <section className="bg-neutral-900/40 border border-neutral-800 rounded-2xl p-6 shadow-xl">
-          <h2 className="text-sm font-black tracking-widest text-neutral-400 flex items-center gap-2 uppercase mb-4">
-            <span className="text-blue-500 text-base">🎰</span> Live Active Game Environments
-          </h2>
-          {liveGames.length === 0 ? (
-            <p className="text-xs text-neutral-500 italic font-medium tracking-wide">No active rooms currently hosting players.</p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {liveGames.map((room) => (
-                <div key={room.id} className="bg-neutral-950 border border-neutral-800 rounded-xl p-4 relative overflow-hidden">
-                  <div className="absolute left-0 top-0 w-1 h-full bg-blue-500"></div>
-                  <div className="flex justify-between items-center border-b border-neutral-900 pb-2 mb-3">
-                    <span className="text-[11px] font-bold text-white tracking-wider">Room: {room.id.substring(0, 8).toUpperCase()}</span>
-                    <span className="text-[9px] font-black bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded uppercase border border-blue-500/20">{room.status}</span>
-                  </div>
-                  <div className="space-y-1.5 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-neutral-500 text-[10px] uppercase font-bold tracking-wider">Players Joined:</span>
-                      <span className="font-bold text-white font-mono">{room.players_count ?? room.player_count ?? 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-neutral-500 text-[10px] uppercase font-bold tracking-wider">Accumulated Pot:</span>
-                      <span className="font-bold text-emerald-400 font-mono">{room.pot_size ?? room.pot ?? 0} ETB</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-neutral-500 text-[10px] uppercase font-bold tracking-wider">Ticket Stake:</span>
-                      <span className="font-bold text-amber-500 font-mono">{room.ticket_price ?? room.price ?? 0} ETB</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
 
         {/* Time filters */}
         <div className="flex gap-2 bg-neutral-900/40 p-1 rounded-xl border border-neutral-800/80 w-max">
