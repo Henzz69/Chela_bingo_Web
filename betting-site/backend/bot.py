@@ -713,7 +713,7 @@ def cmd_credit(message):
         # INSERT AS ADMIN_CREDIT INSTEAD OF DEPOSIT FOR DASHBOARD COLOR CODING
         _supabase.table("transactions").insert({
             "id": str(uuid.uuid4()),
-            "user_id": str(target_tg_id),
+            "user_id": int(target_tg_id),  # STRICTLY PASSED AS INT FOR BIGINT COMPATIBILITY
             "amount": amount,
             "tx_type": "admin_credit",
             "status": "completed"
@@ -907,7 +907,7 @@ def handle_callback(call):
                 
                 _supabase.table("transactions").insert({
                     "id": str(uuid.uuid4()),
-                    "user_id": str(call.from_user.id),
+                    "user_id": int(call.from_user.id),
                     "amount": amount,
                     "tx_type": "withdrawal",
                     "status": "pending",
@@ -1120,7 +1120,7 @@ def handle_text(message):
                     _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
                     _supabase.table("transactions").insert({
                         "id": str(uuid.uuid4()),
-                        "user_id": str(message.from_user.id),
+                        "user_id": int(message.from_user.id),
                         "amount": verified_amount,
                         "tx_type": "deposit",
                         "status": "completed"

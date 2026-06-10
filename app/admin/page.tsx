@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-// ✅ Restored the exact import that gave you a green build
 import { supabase } from '@/lib/supabaseClient';
 
 // 🔒 THE MASTER PASSWORD VAULT
@@ -75,7 +74,9 @@ export default function AdminDashboard() {
   
   const [pendingTxs, setPendingTxs] = useState<EnrichedTransaction[]>([]);
   const [recentDeposits, setRecentDeposits] = useState<EnrichedTransaction[]>([]);
-  const [liveGames, setLiveGames] = useState<LiveBingoGame[]>([]);
+  
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [activeGames, setActiveGames] = useState<any[]>([]);
   
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [processingTx, setProcessingTx] = useState<string | null>(null);
@@ -84,7 +85,7 @@ export default function AdminDashboard() {
   const fetchDashboardData = async () => {
     if (!isUnlocked) return;
     setIsLoadingData(true);
-
+    
     const now = new Date();
     let startDate = new Date(0); 
     if (timeScale === 'today') startDate = new Date(now.setHours(0,0,0,0));
@@ -95,7 +96,9 @@ export default function AdminDashboard() {
     try {
       // Fetch Macro Stats safely
       const { data: globalData, error: globalErr } = await supabase.rpc('get_admin_stats');
-      if (!globalErr && globalData) setMacroStats(globalData as AdminStats);
+      if (!globalErr && globalData) {
+          setMacroStats(globalData as AdminStats);
+      }
 
       // 1. Fetch ALL Pending Withdrawals Directly
       const { data: pendingWithdrawalsData, error: pendingErr } = await supabase
@@ -107,7 +110,7 @@ export default function AdminDashboard() {
 
       if (pendingErr) console.error("Error fetching pending txs:", pendingErr);
 
-      // 2. Fetch Completed Deposits, Refunds, and Admin Credits Directly
+      // 2. Fetch Completed Deposits Directly (Linked to TimeScale)
       const { data: completedDepositsData } = await supabase
           .from('transactions')
           .select('*')
@@ -117,14 +120,14 @@ export default function AdminDashboard() {
           .order('created_at', { ascending: false })
           .limit(100);
 
-      // 3. Fetch Live Active Bingo Games from Database
-      const { data: activeBingoRooms, error: roomsErr } = await supabase
+      // 3. Fetch Active Bingo Games
+      const { data: gamesData } = await supabase
           .from('bingo_rooms')
           .select('*')
           .in('status', ['waiting', 'active', 'playing', 'open']);
-
-      if (!roomsErr && activeBingoRooms) {
-          setLiveGames(activeBingoRooms as LiveBingoGame[]);
+      
+      if (gamesData) {
+          setActiveGames(gamesData);
       }
 
       // 4. Fetch User Details to map names and phones
@@ -145,8 +148,9 @@ export default function AdminDashboard() {
           });
       }
 
-      // Enrich the withdrawals with User Data safely
-      const enrichedWithdrawals = ((pendingWithdrawalsData as DBTransaction[]) || []).map((tx) => {
+      // Enrich the transactions with User Data safely
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const enrichedWithdrawals = ((pendingWithdrawalsData as DBTransaction[]) || []).map((tx: any) => {
           const lookupId = tx.user_id ? tx.user_id.toString().trim() : '';
           const match = userMap[lookupId];
           return {
@@ -156,8 +160,8 @@ export default function AdminDashboard() {
           } as EnrichedTransaction;
       });
 
-      // Enrich the deposits with User Data safely
-      const enrichedDeposits = ((completedDepositsData as DBTransaction[]) || []).map((tx) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const enrichedDeposits = ((completedDepositsData as DBTransaction[]) || []).map((tx: any) => {
           const lookupId = tx.user_id ? tx.user_id.toString().trim() : '';
           const match = userMap[lookupId];
           return {
@@ -227,7 +231,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🚀 BULLETPROOF RPC REJECT & FULL REFUND LOGIC
+  // 🚀 BULLETPROOF REJECT & FULL REFUND LOGIC
   const handleReject = async (txId: string, userId: string, amount: number) => {
     if (!window.confirm(`Are you sure you want to REJECT this transaction and REFUND ${amount} ETB to the user's wallet?`)) return;
     setProcessingTx(txId);
@@ -335,13 +339,13 @@ export default function AdminDashboard() {
         </div>
 
         {/* 🎮 LIVE BINGO SERVERS INTERFACE GRID */}
-        {liveGames.length > 0 && (
+        {activeGames.length > 0 && (
           <section className="bg-neutral-900/40 border border-neutral-800 rounded-2xl p-6 shadow-xl">
             <h2 className="text-sm font-black tracking-widest text-neutral-400 flex items-center gap-2 uppercase mb-4">
               <span className="text-blue-500 text-base">🎰</span> Live Active Game Environments
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {liveGames.map((room) => (
+              {activeGames.map((room) => (
                 <div key={room.id} className="bg-neutral-950 border border-neutral-800 rounded-xl p-4 relative overflow-hidden shadow-md">
                   <div className="absolute left-0 top-0 w-1 h-full bg-blue-500"></div>
                   <div className="flex justify-between items-center border-b border-neutral-900 pb-2 mb-3">
