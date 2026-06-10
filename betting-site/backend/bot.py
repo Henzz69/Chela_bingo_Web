@@ -197,7 +197,6 @@ def set_lang(chat_id: int, lang: str) -> None:
     user_lang[chat_id] = lang
 
 def can_execute_command(message, allow_group_admin=False) -> bool:
-    """Safely routes commands. Deletes public spam from regular users entirely."""
     if message.chat.type != "private":
         if allow_group_admin and is_admin(message):
             return True

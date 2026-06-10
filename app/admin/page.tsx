@@ -85,13 +85,6 @@ export default function AdminDashboard() {
   const fetchDashboardData = async () => {
     if (!isUnlocked) return;
     setIsLoadingData(true);
-    
-    const now = new Date();
-    let startDate = new Date(0); 
-    if (timeScale === 'today') startDate = new Date(now.setHours(0,0,0,0));
-    if (timeScale === 'week') startDate = new Date(now.setDate(now.getDate() - 7));
-    if (timeScale === 'month') startDate = new Date(now.setDate(now.getDate() - 30));
-    const isoStart = startDate.toISOString();
 
     try {
       // Fetch Macro Stats safely
@@ -110,13 +103,12 @@ export default function AdminDashboard() {
 
       if (pendingErr) console.error("Error fetching pending txs:", pendingErr);
 
-      // 2. Fetch Completed Deposits, Refunds, and Admin Credits Directly
+      // 2. Fetch Completed Deposits Directly (Time Filter REMOVED so old data always shows)
       const { data: completedDepositsData } = await supabase
           .from('transactions')
           .select('*')
           .in('tx_type', ['deposit', 'refund', 'admin_credit'])
           .eq('status', 'completed')
-          .gte('created_at', isoStart)
           .order('created_at', { ascending: false })
           .limit(100);
 
@@ -479,7 +471,7 @@ export default function AdminDashboard() {
           <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg flex flex-col h-[700px]">
             <div className="bg-neutral-900 border-b border-neutral-800 px-6 py-4 flex justify-between items-center shrink-0">
               <h2 className="text-lg font-black tracking-widest text-white flex items-center gap-2">
-                <span className="text-emerald-500">📥</span> CASH INFLOW LEDGER
+                <span className="text-emerald-500">📥</span> SUCCESSFUL DEPOSITS
               </h2>
               <span className="bg-emerald-500/10 text-emerald-500 text-[10px] font-bold px-3 py-1.5 rounded border border-emerald-500/20 uppercase shadow-[0_0_10px_rgba(16,185,129,0.2)]">
                 Last 100
