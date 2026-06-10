@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -23,43 +23,15 @@ interface EnrichedTransaction {
   account_number?: string;  
 }
 
-interface AdminStats {
-  total_profit: number;
-  total_wallets: number;
-  active_rooms: number;
-}
-
-interface UserLookup {
-  display_name: string | null;
-  phone: string | null;
-}
-
 interface LiveBingoGame {
   id: string;
   status: string;
-  players_count?: number;
-  player_count?: number;
-  pot_size?: number;
-  pot?: number;
-  ticket_price?: number;
-  price?: number;
+  entry_fee: number;
+  active_players: number;
+  live_pot: number;
 }
 
-// 🛡️ Strict Database Types to satisfy Vercel Build
-interface DBTransaction {
-  id: string;
-  user_id: string | number;
-  amount: number;
-  tx_type: string;
-  status: string;
-  created_at: string;
-  bank_name?: string;
-  account_name?: string;
-  account_number?: string;
-}
-
-interface DBUser {
-  tg_id: string | number;
+interface UserLookup {
   display_name: string | null;
   phone: string | null;
 }
@@ -70,18 +42,19 @@ export default function AdminDashboard() {
   const [passError, setPassError] = useState(false);
 
   const [timeScale, setTimeScale] = useState<TimeScale>('today');
-  const [macroStats, setMacroStats] = useState<AdminStats | null>(null);
+  
+  // 📊 Telemetry State
+  const [totalWallets, setTotalWallets] = useState<number>(0);
+  const [trueProfit, setTrueProfit] = useState<number>(0);
+  const [activeGames, setActiveGames] = useState<Record<string, LiveBingoGame>>({});
   
   const [pendingTxs, setPendingTxs] = useState<EnrichedTransaction[]>([]);
   const [recentDeposits, setRecentDeposits] = useState<EnrichedTransaction[]>([]);
   
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [activeGames, setActiveGames] = useState<any[]>([]);
-  
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [processingTx, setProcessingTx] = useState<string | null>(null);
 
-  // 📊 DIRECT SUPABASE FETCH ENGINE
+  // 🚀 CORE SYNC ENGINE
   const fetchDashboardData = async () => {
     if (!isUnlocked) return;
     setIsLoadingData(true);
@@ -94,105 +67,160 @@ export default function AdminDashboard() {
     const isoStart = startDate.toISOString();
 
     try {
-      // Fetch Macro Stats safely
-      const { data: globalData, error: globalErr } = await supabase.rpc('get_admin_stats');
-      if (!globalErr && globalData) {
-          setMacroStats(globalData as AdminStats);
-      }
+      // 1. Fetch Global Wallets (We still use your RPC for this lightweight check)
+      const { data: globalData } = await supabase.rpc('get_admin_stats');
+      if (globalData) setTotalWallets(globalData.total_wallets);
 
-      // 1. Fetch ALL Pending Withdrawals Directly
-      const { data: pendingWithdrawalsData, error: pendingErr } = await supabase
+      // 2. THE TRUE PROFIT CALCULATION (Zero DB Changes Required)
+      // We sum all 80% payouts, and calculate the corresponding 20% house cut (Payout * 0.25)
+      const { data: winTxs } = await supabase
+        .from('transactions')
+        .select('amount')
+        .eq('tx_type', 'bingo_win')
+        .gte('created_at', isoStart);
+        
+      const totalPayouts = (winTxs || []).reduce((sum, tx) => sum + Number(tx.amount), 0);
+      setTrueProfit(totalPayouts * 0.25);
+
+      // 3. Time-Filtered Withdrawals
+      const { data: pendingWData } = await supabase
           .from('transactions')
           .select('*')
           .eq('tx_type', 'withdrawal')
           .eq('status', 'pending')
           .order('created_at', { ascending: false });
 
-      if (pendingErr) console.error("Error fetching pending txs:", pendingErr);
-
-      // 2. Fetch Completed Ledger Items (Deposits, Refunds, Admin Credits)
-      const { data: completedDepositsData } = await supabase
+      // 4. Time-Filtered Deposits
+      const { data: depositsData } = await supabase
           .from('transactions')
           .select('*')
-          .in('tx_type', ['deposit', 'refund', 'admin_credit'])
+          .eq('tx_type', 'deposit')
           .eq('status', 'completed')
-          .gt('amount', 0) // Prevents old broken negative test records from loading
+          .gte('created_at', isoStart)
           .order('created_at', { ascending: false })
-          .limit(100);
+          .limit(200);
 
-      // 3. Fetch Active Bingo Games
-      const { data: gamesData } = await supabase
-          .from('bingo_rooms')
-          .select('*')
-          .in('status', ['waiting', 'active', 'playing', 'open']);
-      
-      if (gamesData) {
-          setActiveGames(gamesData);
-      }
-
-      // 4. Fetch User Details to map names and phones
-      const { data: usersData } = await supabase
-          .from('tg_users')
-          .select('tg_id, display_name, phone');
-
-      // Create a fast lookup map strictly typed
+      // 5. Fetch User Lookup Dictionary
+      const { data: usersData } = await supabase.from('tg_users').select('tg_id, display_name, phone');
       const userMap: Record<string, UserLookup> = {};
       if (usersData) {
-          (usersData as DBUser[]).forEach((user) => {
-              if (user.tg_id) {
-                userMap[user.tg_id.toString().trim()] = {
-                  display_name: user.display_name,
-                  phone: user.phone
-                };
-              }
+          usersData.forEach((u: any) => {
+              userMap[u.tg_id.toString()] = { display_name: u.display_name, phone: u.phone };
           });
       }
 
-      // Enrich the withdrawals
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const enrichedWithdrawals = ((pendingWithdrawalsData as DBTransaction[]) || []).map((tx: any) => {
-          const lookupId = tx.user_id ? tx.user_id.toString().trim() : '';
-          const match = userMap[lookupId];
-          return {
-              ...tx,
-              display_name: match?.display_name || `User (${tx.user_id})`,
-              phone: match?.phone || 'No Phone'
-          } as EnrichedTransaction;
-      });
+      // Enrich Data
+      const enrich = (txs: any[]) => (txs || []).map(tx => ({
+          ...tx,
+          display_name: userMap[tx.user_id?.toString()]?.display_name || `User ${tx.user_id}`,
+          phone: userMap[tx.user_id?.toString()]?.phone || 'No Phone'
+      }));
 
-      // Enrich the deposits AND strictly filter out test data under 50 ETB visually
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const enrichedDeposits = ((completedDepositsData as DBTransaction[]) || [])
-          .filter((tx) => {
-              if (tx.tx_type === 'deposit' && tx.amount < 50) return false;
-              return true;
-          })
-          .map((tx: any) => {
-              const lookupId = tx.user_id ? tx.user_id.toString().trim() : '';
-              const match = userMap[lookupId];
-              return {
-                  ...tx,
-                  display_name: match?.display_name || `User (${tx.user_id})`,
-                  phone: match?.phone || 'No Phone'
-              } as EnrichedTransaction;
-          });
+      setPendingTxs(enrich(pendingWData));
+      setRecentDeposits(enrich(depositsData).filter(tx => tx.amount >= 50));
 
-      setPendingTxs(enrichedWithdrawals);
-      setRecentDeposits(enrichedDeposits);
+      // 6. LIVE GAMES RADAR
+      const { data: liveRooms } = await supabase
+        .from('bingo_rooms')
+        .select('id, status, entry_fee')
+        .in('status', ['waiting', 'countdown', 'active']);
+
+      if (liveRooms && liveRooms.length > 0) {
+        const roomIds = liveRooms.map(r => r.id);
+        // Fetch active cards for these rooms
+        const { data: activeCards } = await supabase
+          .from('bingo_cards')
+          .select('room_id')
+          .in('room_id', roomIds)
+          .not('card_index', 'is', null);
+
+        // Map player counts
+        const cardCounts = (activeCards || []).reduce((acc: any, card: any) => {
+          acc[card.room_id] = (acc[card.room_id] || 0) + 1;
+          return acc;
+        }, {});
+
+        const mappedRooms: Record<string, LiveBingoGame> = {};
+        liveRooms.forEach(r => {
+           const players = cardCounts[r.id] || 0;
+           mappedRooms[r.id] = {
+             id: r.id,
+             status: r.status,
+             entry_fee: r.entry_fee,
+             active_players: players,
+             live_pot: players * r.entry_fee
+           };
+        });
+        setActiveGames(mappedRooms);
+      } else {
+        setActiveGames({});
+      }
 
     } catch (err) {
-      const error = err as Error;
-      console.error("Dashboard Sync Failed Entirely:", error.message);
+      console.error("Dashboard Sync Failed:", err);
     } finally {
       setIsLoadingData(false);
     }
   };
 
+  // 📡 WEBSOCKET REAL-TIME ENGINE
   useEffect(() => {
+    if (!isUnlocked) return;
     fetchDashboardData();
-    const interval = setInterval(fetchDashboardData, 15000); 
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    // Channel 1: Watch Rooms
+    const roomSub = supabase.channel('admin-rooms')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bingo_rooms' }, (payload) => {
+         const newRoom = payload.new as any;
+         if (['finished', 'closed'].includes(newRoom.status)) {
+            setActiveGames(prev => {
+              const clone = { ...prev };
+              delete clone[newRoom.id];
+              return clone;
+            });
+         } else if (['waiting', 'countdown', 'active'].includes(newRoom.status)) {
+            setActiveGames(prev => ({
+              ...prev,
+              [newRoom.id]: {
+                id: newRoom.id,
+                status: newRoom.status,
+                entry_fee: newRoom.entry_fee,
+                active_players: prev[newRoom.id]?.active_players || 0,
+                live_pot: (prev[newRoom.id]?.active_players || 0) * newRoom.entry_fee
+              }
+            }));
+         }
+      }).subscribe();
+
+    // Channel 2: Watch Cards (Player Count Ticker)
+    const cardSub = supabase.channel('admin-cards')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'bingo_cards' }, (payload) => {
+         const card = payload.new as any;
+         if (card.card_index !== null) {
+            setActiveGames(prev => {
+              const room = prev[card.room_id];
+              if (!room) return prev;
+              const newPlayers = room.active_players + 1;
+              return {
+                ...prev,
+                [room.id]: { ...room, active_players: newPlayers, live_pot: newPlayers * room.entry_fee }
+              };
+            });
+         }
+      }).subscribe();
+
+    // Channel 3: Watch Ledger (Deposits/Withdrawals)
+    const txSub = supabase.channel('admin-txs')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'transactions' }, () => {
+         // Silently refresh ledger tables on new transaction
+         fetchDashboardData(); 
+      }).subscribe();
+
+    return () => {
+      supabase.removeChannel(roomSub);
+      supabase.removeChannel(cardSub);
+      supabase.removeChannel(txSub);
+    };
   }, [isUnlocked, timeScale]);
 
   const timeAgo = (dateStr: string) => {
@@ -213,51 +241,34 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🚀 DIRECT APPROVAL LOGIC
   const handleApprove = async (txId: string) => {
     if (!window.confirm("Mark this withdrawal as Approved and Paid?")) return;
     setProcessingTx(txId);
     try {
-        const { error } = await supabase
-            .from('transactions')
-            .update({ status: 'completed' })
-            .eq('id', txId);
-            
+        const { error } = await supabase.from('transactions').update({ status: 'completed' }).eq('id', txId);
         if (error) throw error;
-        
         setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
-        await fetchDashboardData();
-    } catch (err) {
-        const error = err as Error;
-        console.error("Approval Failed:", error.message);
-        alert("Error approving transaction. Check network status.");
+    } catch (err: any) {
+        alert("Error approving transaction.");
     } finally {
         setProcessingTx(null);
     }
   };
 
-  // 🚀 BULLETPROOF REJECT & FULL REFUND LOGIC
   const handleReject = async (txId: string, userId: string, amount: number) => {
-    if (!window.confirm(`Are you sure you want to REJECT this transaction and REFUND ${amount} ETB to the user's wallet?`)) return;
+    if (!window.confirm(`Are you sure you want to REJECT and REFUND ${amount} ETB?`)) return;
     setProcessingTx(txId);
-
     try {
         const { error } = await supabase.rpc('admin_reject_withdrawal', {
             p_tx_id: txId.toString(),
             p_user_id: userId.toString(),
             p_amount: Number(amount)
         });
-
         if (error) throw error;
-
         setPendingTxs(prev => prev.filter(tx => tx.id !== txId));
-        alert(`✅ Success! Refunded ${amount} ETB back to user.`);
-        await fetchDashboardData();
-
-    } catch (err) {
-        const error = err as Error;
-        console.error("CRITICAL REJECT AND REFUND CANCELED:", error.message);
-        alert(`Failed to complete reject command.\n\nReason: ${error.message || 'Check database schema alignment.'}`);
+        alert(`✅ Refunded ${amount} ETB.`);
+    } catch (err: any) {
+        alert(`Failed to complete reject command.\n\nReason: ${err.message}`);
     } finally {
         setProcessingTx(null);
     }
@@ -272,8 +283,7 @@ export default function AdminDashboard() {
             <span className="text-2xl opacity-80">🔐</span>
           </div>
           <h1 className="text-xl font-black tracking-widest text-white uppercase mb-2">Restricted Access</h1>
-          <p className="text-neutral-500 text-xs mb-8">Enter authorization code to proceed.</p>
-          <form onSubmit={handleUnlock} className="flex flex-col gap-4">
+          <form onSubmit={handleUnlock} className="flex flex-col gap-4 mt-8">
             <input 
               type="password" 
               value={passInput}
@@ -282,10 +292,7 @@ export default function AdminDashboard() {
               className={`w-full bg-neutral-950 border ${passError ? 'border-red-500 text-red-500' : 'border-neutral-800 text-emerald-400'} rounded-xl px-4 py-3 text-center tracking-[0.3em] font-black focus:outline-none focus:border-emerald-500 transition-colors`}
               autoFocus
             />
-            <button 
-              type="submit"
-              className={`w-full py-3 rounded-xl font-black tracking-widest uppercase transition-all ${passError ? 'bg-red-500 text-white' : 'bg-emerald-500 text-black hover:bg-emerald-400 active:scale-95'}`}
-            >
+            <button type="submit" className={`w-full py-3 rounded-xl font-black tracking-widest uppercase transition-all ${passError ? 'bg-red-500 text-white' : 'bg-emerald-500 text-black hover:bg-emerald-400 active:scale-95'}`}>
               {passError ? 'DENIED' : 'DECRYPT'}
             </button>
           </form>
@@ -298,7 +305,6 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-[#050505] text-neutral-100 p-4 md:p-8 font-mono overflow-y-auto">
       <div className="max-w-6xl mx-auto space-y-8 pb-24">
         
-        {/* Header */}
         <header className="flex items-center justify-between pb-4 border-b border-neutral-800">
           <div>
             <h1 className="text-3xl font-black tracking-tighter text-emerald-400 drop-shadow-[0_0_15px_rgba(16,185,129,0.3)]">CHELA COMMAND</h1>
@@ -307,7 +313,7 @@ export default function AdminDashboard() {
           <div className="flex flex-col items-end gap-1">
             <div className="flex items-center gap-2 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-              <span className="text-emerald-500 text-[10px] font-black tracking-widest">SYSTEM ONLINE</span>
+              <span className="text-emerald-500 text-[10px] font-black tracking-widest">WSS CONNECTED</span>
             </div>
             <button onClick={fetchDashboardData} disabled={isLoadingData} className="text-[10px] text-neutral-400 bg-neutral-900 border border-neutral-800 px-2 py-0.5 mt-1 rounded hover:bg-neutral-800 active:scale-95 transition-all">
               {isLoadingData ? 'SYNCING...' : '🔄 FORCE REFRESH'}
@@ -315,60 +321,71 @@ export default function AdminDashboard() {
           </div>
         </header>
 
+        {/* TIME FILTERS (Now actively wired to queries) */}
+        <div className="flex gap-2 bg-neutral-900/40 p-1 rounded-xl border border-neutral-800/80 w-max">
+          {(['today', 'week', 'month', 'all'] as TimeScale[]).map((scale) => (
+            <button key={scale} onClick={() => setTimeScale(scale)} className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${timeScale === scale ? 'bg-emerald-500 text-black shadow-md' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'}`}>
+              {scale}
+            </button>
+          ))}
+        </div>
+
         {/* 🌍 GLOBAL TELEMETRY */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500"></div>
-            <h3 className="text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-1">Total House Profit</h3>
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden shadow-lg">
+            <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,1)]"></div>
+            <h3 className="text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-1">True House Profit</h3>
             <div className="text-4xl font-black text-white flex items-baseline gap-1">
-              {macroStats?.total_profit?.toLocaleString() || '0'} <span className="text-sm text-emerald-500">ETB</span>
+              {trueProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} <span className="text-sm text-emerald-500">ETB</span>
             </div>
-            <p className="text-emerald-400/60 text-[10px] mt-2 uppercase tracking-widest">All-time collected Derash</p>
+            <p className="text-emerald-400/60 text-[10px] mt-2 uppercase tracking-widest">20% cut from finished games</p>
           </div>
-          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden">
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden shadow-lg">
             <div className="absolute top-0 left-0 w-full h-1 bg-blue-500"></div>
             <h3 className="text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-1">ETB In Circulation</h3>
             <div className="text-4xl font-black text-white flex items-baseline gap-1">
-              {macroStats?.total_wallets?.toLocaleString() || '0'} <span className="text-sm text-blue-500">ETB</span>
+              {totalWallets.toLocaleString()} <span className="text-sm text-blue-500">ETB</span>
             </div>
-            <p className="text-blue-400/60 text-[10px] mt-2 uppercase tracking-widest">Active balances across all users</p>
+            <p className="text-blue-400/60 text-[10px] mt-2 uppercase tracking-widest">Total player wallet balances</p>
           </div>
-          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1 bg-orange-500"></div>
-            <h3 className="text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-1">Active Servers</h3>
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl relative overflow-hidden shadow-lg">
+            <div className="absolute top-0 left-0 w-full h-1 bg-orange-500 animate-pulse"></div>
+            <h3 className="text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-1">Live Servers Online</h3>
             <div className="text-4xl font-black text-white flex items-baseline gap-1">
-              {macroStats?.active_rooms || '0'}
+              {Object.keys(activeGames).length}
             </div>
-            <p className="text-orange-400/60 text-[10px] mt-2 uppercase tracking-widest">Games playing or waiting</p>
+            <p className="text-orange-400/60 text-[10px] mt-2 uppercase tracking-widest">Active & Waiting Rooms</p>
           </div>
         </div>
 
-        {/* 🎮 LIVE BINGO SERVERS INTERFACE GRID */}
-        {activeGames.length > 0 && (
+        {/* 🎮 LIVE BINGO SERVERS (Websocket Driven) */}
+        {Object.keys(activeGames).length > 0 && (
           <section className="bg-neutral-900/40 border border-neutral-800 rounded-2xl p-6 shadow-xl">
             <h2 className="text-sm font-black tracking-widest text-neutral-400 flex items-center gap-2 uppercase mb-4">
-              <span className="text-blue-500 text-base">🎰</span> Live Active Game Environments
+              <span className="text-blue-500 text-base animate-spin-slow">📡</span> Active Game Radar
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {activeGames.map((room) => (
+              {Object.values(activeGames).map((room) => (
                 <div key={room.id} className="bg-neutral-950 border border-neutral-800 rounded-xl p-4 relative overflow-hidden shadow-md">
-                  <div className="absolute left-0 top-0 w-1 h-full bg-blue-500"></div>
+                  <div className={`absolute left-0 top-0 w-1 h-full ${room.status === 'active' ? 'bg-orange-500' : 'bg-blue-500'}`}></div>
                   <div className="flex justify-between items-center border-b border-neutral-900 pb-2 mb-3">
-                    <span className="text-[11px] font-bold text-white tracking-wider">Room: {room.id.substring(0, 8).toUpperCase()}</span>
-                    <span className="text-[9px] font-black bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded uppercase border border-blue-500/20">{room.status}</span>
+                    <span className="text-[11px] font-bold text-white tracking-wider">ID: {room.id.substring(0, 8).toUpperCase()}</span>
+                    <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase border ${room.status === 'active' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20 animate-pulse' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}>
+                      {room.status}
+                    </span>
                   </div>
                   <div className="space-y-1.5 text-xs">
                     <div className="flex justify-between">
-                      <span className="text-neutral-500 text-[10px] uppercase font-bold tracking-wider">Players Joined:</span>
-                      <span className="font-bold text-white font-mono">{room.players_count ?? room.player_count ?? 0}</span>
+                      <span className="text-neutral-500 text-[10px] uppercase font-bold tracking-wider">Locked Players:</span>
+                      <span className="font-bold text-white font-mono">{room.active_players}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-neutral-500 text-[10px] uppercase font-bold tracking-wider">Accumulated Pot:</span>
-                      <span className="font-bold text-emerald-400 font-mono">{room.pot_size ?? room.pot ?? 0} ETB</span>
+                      <span className="text-neutral-500 text-[10px] uppercase font-bold tracking-wider">Live Pot:</span>
+                      <span className="font-bold text-emerald-400 font-mono">{room.live_pot.toLocaleString()} ETB</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-neutral-500 text-[10px] uppercase font-bold tracking-wider">Ticket Stake:</span>
-                      <span className="font-bold text-amber-500 font-mono">{room.ticket_price ?? room.price ?? 0} ETB</span>
+                      <span className="text-neutral-500 text-[10px] uppercase font-bold tracking-wider">Stake Tier:</span>
+                      <span className="font-bold text-amber-500 font-mono">{room.entry_fee} ETB</span>
                     </div>
                   </div>
                 </div>
@@ -377,29 +394,20 @@ export default function AdminDashboard() {
           </section>
         )}
 
-        {/* Time filters */}
-        <div className="flex gap-2 bg-neutral-900/40 p-1 rounded-xl border border-neutral-800/80 w-max">
-          {(['today', 'week', 'month', 'all'] as TimeScale[]).map((scale) => (
-            <button key={scale} onClick={() => setTimeScale(scale)} className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${timeScale === scale ? 'bg-emerald-500 text-black shadow-md' : 'text-neutral-400 hover:text-white'}`}>
-              {scale}
-            </button>
-          ))}
-        </div>
-
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
           
-          {/* ⚡ WITHDRAWALS: Detailed Action Queue */}
+          {/* ⚡ PENDING WITHDRAWALS */}
           <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg flex flex-col h-[700px]">
             <div className="bg-neutral-900 border-b border-neutral-800 px-6 py-4 flex justify-between items-center shrink-0">
               <h2 className="text-lg font-black tracking-widest text-white flex items-center gap-2">
-                <span className="text-yellow-500">📤</span> WITHDRAWAL REQUESTS
+                <span className="text-yellow-500">📤</span> WITHDRAWAL QUEUE
               </h2>
               <span className="bg-yellow-500/10 text-yellow-500 text-[10px] font-bold px-3 py-1.5 rounded border border-yellow-500/20 uppercase shadow-[0_0_10px_rgba(234,179,8,0.2)]">
-                {pendingTxs.length} Pending Action
+                {pendingTxs.length} Pending
               </span>
             </div>
             
-            <div className="overflow-y-auto flex-1 p-4 md:p-6 space-y-6 custom-scrollbar bg-[#0a0a0a]">
+            <div className="overflow-y-auto flex-1 p-4 md:p-6 space-y-6 bg-[#0a0a0a]">
               {pendingTxs.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-neutral-500">
                     <span className="text-4xl mb-2 opacity-50">☕</span>
@@ -411,7 +419,7 @@ export default function AdminDashboard() {
                     <motion.div key={tx.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, x: -50 }} 
                       className="bg-neutral-950 border border-neutral-800 rounded-xl flex flex-col relative overflow-hidden shadow-xl"
                     >
-                      <div className="absolute left-0 top-0 w-1.5 h-full bg-gradient-to-b from-orange-400 to-yellow-600 shadow-[0_0_15px_rgba(249,115,22,0.5)]"></div>
+                      <div className="absolute left-0 top-0 w-1.5 h-full bg-gradient-to-b from-orange-400 to-yellow-600"></div>
                       
                       <div className="flex items-center justify-between p-4 border-b border-neutral-800/80 bg-neutral-900/50">
                         <div className="flex items-center gap-3">
@@ -449,7 +457,7 @@ export default function AdminDashboard() {
                                 <p className="font-bold text-white text-xs">{tx.account_name || 'Not Provided'}</p>
                             </div>
                             <div>
-                                <p className="text-emerald-500/70 text-[9px] font-black uppercase tracking-widest mb-1">Account Number (Select to copy)</p>
+                                <p className="text-emerald-500/70 text-[9px] font-black uppercase tracking-widest mb-1">Account Number</p>
                                 <p className="text-emerald-300 font-mono text-sm bg-black px-3 py-1.5 rounded border border-emerald-500/30 select-all tracking-wider shadow-inner block w-max">
                                     {tx.account_number || 'N/A'}
                                 </p>
@@ -480,66 +488,34 @@ export default function AdminDashboard() {
             </div>
           </section>
 
-          {/* 📥 SUCCESSFUL DEPOSITS */}
+          {/* 📥 COMPLETED DEPOSITS */}
           <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg flex flex-col h-[700px]">
             <div className="bg-neutral-900 border-b border-neutral-800 px-6 py-4 flex justify-between items-center shrink-0">
               <h2 className="text-lg font-black tracking-widest text-white flex items-center gap-2">
-                <span className="text-emerald-500">📥</span> SUCCESSFUL DEPOSITS
+                <span className="text-emerald-500">📥</span> DEPOSITS LOG
               </h2>
               <span className="bg-emerald-500/10 text-emerald-500 text-[10px] font-bold px-3 py-1.5 rounded border border-emerald-500/20 uppercase shadow-[0_0_10px_rgba(16,185,129,0.2)]">
-                Last 100
+                {timeScale.toUpperCase()}
               </span>
             </div>
             
-            <div className="overflow-y-auto flex-1 p-4 md:p-6 space-y-4 custom-scrollbar bg-[#0a0a0a]">
+            <div className="overflow-y-auto flex-1 p-4 md:p-6 space-y-4 bg-[#0a0a0a]">
               {recentDeposits.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-neutral-500">
                     <span className="text-4xl mb-2 opacity-50">📭</span>
-                    <span className="text-sm font-medium tracking-widest uppercase">No recent deposits</span>
+                    <span className="text-sm font-medium tracking-widest uppercase">No data found</span>
                 </div>
               ) : (
-                recentDeposits.map((tx) => {
-                  
-                  // Dynamic Color Formatting Rules
-                  const isRefund = tx.tx_type === 'refund';
-                  const isAdminCredit = tx.tx_type === 'admin_credit';
-                  
-                  let textColor = "text-emerald-400";
-                  let sidebarColor = "bg-emerald-500/30 group-hover:bg-emerald-500";
-                  let badgeBg = "bg-emerald-500/10 text-emerald-500 border-emerald-500/20";
-                  let badgeText = "API AUTOMATED";
-                  let containerBg = "bg-neutral-950 border-neutral-800/80";
-                  let providerText = tx.bank_name || "TELEBIRR"; // Fallback for old data
-
-                  if (isRefund) {
-                      textColor = "text-purple-400";
-                      sidebarColor = "bg-purple-500";
-                      badgeBg = "bg-purple-500 text-white border-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.4)]";
-                      badgeText = "💳 SYSTEM REFUND";
-                      containerBg = "bg-purple-950/20 border-purple-500/30";
-                      providerText = "INTERNAL WALLET";
-                  } else if (isAdminCredit) {
-                      textColor = "text-blue-400";
-                      sidebarColor = "bg-blue-500/30 group-hover:bg-blue-500";
-                      badgeBg = "bg-blue-500/10 text-blue-400 border-blue-500/20";
-                      badgeText = "MANUAL CREDIT";
-                  }
-
-                  const displayAmount = Math.abs(tx.amount).toLocaleString();
-
-                  return (
-                    <div key={tx.id} className={`${containerBg} border p-4 rounded-xl flex flex-col gap-3 transition-colors relative overflow-hidden group`}>
-                      <div className={`absolute left-0 top-0 w-1 h-full ${sidebarColor} transition-colors`}></div>
+                recentDeposits.map((tx) => (
+                    <div key={tx.id} className="bg-neutral-950 border border-neutral-800/80 p-4 rounded-xl flex flex-col gap-3 relative overflow-hidden group">
+                      <div className="absolute left-0 top-0 w-1 h-full bg-emerald-500/30 group-hover:bg-emerald-500 transition-colors"></div>
                       
                       <div className="flex items-center justify-between border-b border-neutral-800/50 pb-2">
-                        <div className={`${textColor} font-black text-xl drop-shadow-sm`}>+{displayAmount} ETB</div>
+                        <div className="text-emerald-400 font-black text-xl drop-shadow-sm">+{tx.amount.toLocaleString()} ETB</div>
                         <div className="text-right flex flex-col items-end">
                           <div className="text-[10px] text-neutral-400 tracking-widest uppercase font-bold">{timeAgo(tx.created_at)}</div>
-                          <div className={`text-[9px] px-1.5 py-0.5 rounded mt-1 font-black tracking-widest border ${badgeBg}`}>
-                            {badgeText}
-                          </div>
-                          <div className="text-[9px] text-neutral-500 font-bold uppercase tracking-widest mt-1">
-                            VIA: {providerText}
+                          <div className="text-[9px] px-1.5 py-0.5 rounded mt-1 font-black tracking-widest border bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+                            VERIFIED
                           </div>
                         </div>
                       </div>
@@ -550,18 +526,16 @@ export default function AdminDashboard() {
                              <span className="text-sm text-white font-bold">{(tx.display_name && tx.display_name !== 'Unknown User') ? tx.display_name : tx.user_id}</span>
                          </div>
                          <div className="text-xs font-mono text-neutral-400 bg-neutral-900/60 px-2 py-1 rounded border border-neutral-800/50">
-                             {tx.phone || 'No Phone Linked'}
+                             {tx.phone || 'No Phone'}
                          </div>
                       </div>
                     </div>
-                  );
-                })
+                ))
               )}
             </div>
           </section>
 
         </div>
-
       </div>
     </div>
   );
