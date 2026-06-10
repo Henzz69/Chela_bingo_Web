@@ -2,8 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-// ✅ FIX: Removed the curly braces here
-import supabase from '@/lib/supabaseClient';
+// ✅ Restored the exact import that gave you a green build
+import { supabase } from '@/lib/supabaseClient';
 
 // 🔒 THE MASTER PASSWORD VAULT
 const MASTER_PASSWORD = "chelahebenki2026";
@@ -44,6 +44,25 @@ interface LiveBingoGame {
   pot?: number;
   ticket_price?: number;
   price?: number;
+}
+
+// 🛡️ Strict Database Types to satisfy Vercel Build
+interface DBTransaction {
+  id: string;
+  user_id: string | number;
+  amount: number;
+  tx_type: string;
+  status: string;
+  created_at: string;
+  bank_name?: string;
+  account_name?: string;
+  account_number?: string;
+}
+
+interface DBUser {
+  tg_id: string | number;
+  display_name: string | null;
+  phone: string | null;
 }
 
 export default function AdminDashboard() {
@@ -88,11 +107,11 @@ export default function AdminDashboard() {
 
       if (pendingErr) console.error("Error fetching pending txs:", pendingErr);
 
-      // 2. Fetch Completed Deposits Directly (Linked to TimeScale)
+      // 2. Fetch Completed Deposits, Refunds, and Admin Credits Directly
       const { data: completedDepositsData } = await supabase
           .from('transactions')
           .select('*')
-          .eq('tx_type', 'deposit')
+          .in('tx_type', ['deposit', 'refund', 'admin_credit'])
           .eq('status', 'completed')
           .gte('created_at', isoStart)
           .order('created_at', { ascending: false })
@@ -116,8 +135,7 @@ export default function AdminDashboard() {
       // Create a fast lookup map strictly typed to avoid Vercel build failures
       const userMap: Record<string, UserLookup> = {};
       if (usersData) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          usersData.forEach((user: any) => {
+          (usersData as DBUser[]).forEach((user) => {
               if (user.tg_id) {
                 userMap[user.tg_id.toString().trim()] = {
                   display_name: user.display_name,
@@ -127,9 +145,8 @@ export default function AdminDashboard() {
           });
       }
 
-      // Enrich the transactions with User Data safely
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const enrichedWithdrawals = (pendingWithdrawalsData || []).map((tx: any) => {
+      // Enrich the withdrawals with User Data safely
+      const enrichedWithdrawals = ((pendingWithdrawalsData as DBTransaction[]) || []).map((tx) => {
           const lookupId = tx.user_id ? tx.user_id.toString().trim() : '';
           const match = userMap[lookupId];
           return {
@@ -139,8 +156,8 @@ export default function AdminDashboard() {
           } as EnrichedTransaction;
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const enrichedDeposits = (completedDepositsData || []).map((tx: any) => {
+      // Enrich the deposits with User Data safely
+      const enrichedDeposits = ((completedDepositsData as DBTransaction[]) || []).map((tx) => {
           const lookupId = tx.user_id ? tx.user_id.toString().trim() : '';
           const match = userMap[lookupId];
           return {
@@ -216,7 +233,6 @@ export default function AdminDashboard() {
     setProcessingTx(txId);
 
     try {
-        // Force evaluation through the dropped and updated master RPC procedure function
         const { error } = await supabase.rpc('admin_reject_withdrawal', {
             p_tx_id: txId.toString(),
             p_user_id: userId.toString(),
@@ -326,7 +342,7 @@ export default function AdminDashboard() {
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {liveGames.map((room) => (
-                <div key={room.id} className="bg-neutral-950 border border-neutral-800 rounded-xl p-4 relative overflow-hidden">
+                <div key={room.id} className="bg-neutral-950 border border-neutral-800 rounded-xl p-4 relative overflow-hidden shadow-md">
                   <div className="absolute left-0 top-0 w-1 h-full bg-blue-500"></div>
                   <div className="flex justify-between items-center border-b border-neutral-900 pb-2 mb-3">
                     <span className="text-[11px] font-bold text-white tracking-wider">Room: {room.id.substring(0, 8).toUpperCase()}</span>
