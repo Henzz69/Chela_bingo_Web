@@ -110,7 +110,7 @@ export default function AdminDashboard() {
 
       if (pendingErr) console.error("Error fetching pending txs:", pendingErr);
 
-      // 2. Fetch Completed Deposits Directly (Linked to TimeScale)
+      // 2. Fetch Completed Deposits, Refunds, and Admin Credits Directly
       const { data: completedDepositsData } = await supabase
           .from('transactions')
           .select('*')

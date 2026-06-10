@@ -675,7 +675,6 @@ def cmd_credit(message):
     chat_id  = message.chat.id
 
     # HARD LOCK LAYER: ONLY explicit ADMIN_IDS can execute this. 
-    # message.from_user.id strictly enforces real user accounts, destroying anonymous exploit bugs.
     if message.from_user.id not in ADMIN_IDS:
         return
 
@@ -727,7 +726,7 @@ def cmd_credit(message):
             pass
         
     except Exception as e:
-        bot.send_message(chat_id, f"❌ *Command exception raised:* `{str(e)[:200]}`")
+        bot.send_message(chat_id, f"❌ *Credit failed.*\n\nError: `{str(e)[:200]}`")
 
 # ---------------------------------------------------------------------------
 # CONTACT REGISTRATION
