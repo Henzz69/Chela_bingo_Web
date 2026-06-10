@@ -50,14 +50,14 @@ VALID_MERCHANT_ACCOUNTS = [
 ]
 
 # ---------------------------------------------------------------------------
-# HARDENED ADMIN AUTHORIZATION
+# ADMIN AUTHORIZATION
 # ---------------------------------------------------------------------------
 ADMIN_IDS = [5681654051]
 
 def is_admin(message) -> bool:
     """
-    Evaluates basic UI permissions. For sensitive tasks like /credit, 
-    we use direct, un-spoofable ID validation checks.
+    Standard admin UI privileges. For highly sensitive operations (like /credit), 
+    we bypass this completely and enforce strict ID verification.
     """
     if getattr(message, 'from_user', None) and message.from_user.id in ADMIN_IDS:
         return True
@@ -424,10 +424,7 @@ def _extract_transaction_id(text: str):
             
     for word in words:
         if 8 <= len(word) <= 12:
-            has_letter = any(char.isalpha() for char in word)
-            has_number = any(char.isdigit() for char in word)
-            
-            if has_letter and has_number:
+            if any(char.isalpha() for char in word) and any(char.isdigit() for char in word):
                 return word
                 
     return None
@@ -484,7 +481,7 @@ def cmd_play(message):
     
     welcome_text = (
         "🎰 *እንኳን ወደ Chela Bingo በደህና መጡ!* 🎉\n\n"
-        "በዚህ ግሩፕ ውስጥ አዝናኝ የቢንጎ ጨዋታዎችን癶 ዕለታዊ ጃክፖቶችን እና አዳዲስ የጨዋታ መረጃዎችን ያገኛሉ! 💸✨\n\n"
+        "በዚህ ግሩፕ ውስጥ አዝናኝ የቢንጎ ጨዋታዎችን፣ ዕለታዊ ጃክፖቶችን እና አዳዲስ የጨዋታ መረጃዎችን ያገኛሉ! 💸✨\n\n"
         "🎰 ምን ይጠብቆታል?\n"
         "🔹 ዕለታዊ ጃክፖቶች 💰\n"
         "🔹 የተለያዩ የጨዋታ አማራጮች 🎯\n"
@@ -603,7 +600,8 @@ def cmd_withdraw(message):
 
 @bot.message_handler(commands=["testsms"])
 def cmd_testsms(message):
-    if not is_admin(message):
+    # Testsms also requires explicit personal ID check just to be safe
+    if message.from_user.id not in ADMIN_IDS:
         return
     
     raw_text = message.text.replace("/testsms", "").strip()
@@ -623,7 +621,7 @@ def cmd_testsms(message):
 # ---------------------------------------------------------------------------
 @bot.message_handler(commands=["send"])
 def cmd_send_manual_banner(message):
-    if not is_admin(message):
+    if message.from_user.id not in ADMIN_IDS:
         try: bot.delete_message(message.chat.id, message.message_id)
         except Exception: pass
         return
@@ -654,14 +652,19 @@ def cmd_send_manual_banner(message):
         print(f"Error sending manual banner: {e}")
 
 # ---------------------------------------------------------------------------
-# 🛡️ UN-SPOOFABLE HARDECON PRIVATE CREDIT COMMAND SECURITY PATCH
+# 🛡️ UN-SPOOFABLE HARDENED PRIVATE CREDIT COMMAND SECURITY PATCH
 # ---------------------------------------------------------------------------
 @bot.message_handler(commands=["credit"])
 def cmd_credit(message):
+    """
+    Highly secured credit addition logic. 
+    Completely rejects Group Admin, Channel Spoofing, and Anonymous Token bypasses.
+    """
     chat_id  = message.chat.id
 
-    # HARD LOCK LAYER: Strictly require direct private conversation matching your personal account ID
-    if message.chat.type != "private" or message.from_user.id not in ADMIN_IDS:
+    # HARD LOCK LAYER: ONLY explicit ADMIN_IDS can execute this. 
+    # message.from_user.id strictly enforces real user accounts, destroying anonymous exploit bugs.
+    if message.from_user.id not in ADMIN_IDS:
         return
 
     parts = message.text.strip().split()
@@ -671,18 +674,18 @@ def cmd_credit(message):
 
     try:
         amount = float(parts[1])
-        if amount <= 0:
-            bot.send_message(chat_id, "⚠️ Value parameter must be positive numeric.")
+        if amount <= 0 or amount > 50000:
+            bot.send_message(chat_id, "⚠️ Security Boundary Exception: Amount must be positive and reasonable (Max 50,000).")
             return
     except ValueError:
-        bot.send_message(chat_id, "⚠️ Invalid layout format.")
+        bot.send_message(chat_id, "⚠️ Parsing Failure: Invalid numeric format.")
         return
 
     target_tg_id = message.from_user.id
     if len(parts) >= 3:
         try: target_tg_id = int(parts[2])
         except ValueError:
-            bot.send_message(chat_id, "⚠️ Invalid destination identifier sequence.")
+            bot.send_message(chat_id, "⚠️ Parsing Failure: Invalid target ID.")
             return
 
     if _supabase is None: return
@@ -691,7 +694,17 @@ def cmd_credit(message):
         real_bal, promo_bal, total_bal = _get_user_wallet(target_tg_id)
         new_bal = real_bal + amount
         _supabase.table("tg_users").update({"balance": new_bal}).eq("tg_id", target_tg_id).execute()
-        bot.send_message(chat_id, f"✅ *Credited {amount:.2f} ETB* to account signature token: `{target_tg_id}`.\n\n💰 *New Real Balance Wallet Balance State:* `{new_bal:.2f} ETB`")
+        
+        # INSERT AS ADMIN_CREDIT INSTEAD OF DEPOSIT FOR DASHBOARD COLOR CODING
+        _supabase.table("transactions").insert({
+            "id": str(uuid.uuid4()),
+            "user_id": str(target_tg_id),
+            "amount": amount,
+            "tx_type": "admin_credit",
+            "status": "completed"
+        }).execute()
+
+        bot.send_message(chat_id, f"✅ *Credited {amount:.2f} ETB* to target client account: `{target_tg_id}`.\n\n💰 *New Real Balance Wallet Balance State:* `{new_bal:.2f} ETB`")
         try: bot.send_message(target_tg_id, f"🎉 *Deposit Successful!*\n\nYour account has been credited with `{amount:.2f} ETB`.")
         except Exception: pass
     except Exception as e:
@@ -824,9 +837,9 @@ def handle_callback(call):
 
     elif data == "action_withdraw":
         bot.answer_callback_query(call.id)
-        set_state(chat_id, STATE_WITHDRAW_AMOUNT)
+        set_state(chat_id, STATE_AWAITING_WITHDRAW)
         bot.send_message(chat_id, STRINGS[lang]["cancel_instruction"], reply_markup=cancel_reply_keyboard(lang))
-        bot.send_message(chat_id, "Please send the amount to withdraw:")
+        bot.send_message(chat_id, "Choose Your Preferred withdraw Method", reply_markup=withdraw_method_markup())
 
     # --- WITHDRAWAL FLOW CALLBACKS ---
     elif data == "with_method|manual":
@@ -871,6 +884,7 @@ def handle_callback(call):
                 ref = "cN5" + str(uuid.uuid4().hex)[:7].upper()
                 
                 _supabase.table("transactions").insert({
+                    "id": str(uuid.uuid4()),
                     "user_id": str(call.from_user.id),
                     "amount": amount,
                     "tx_type": "withdrawal",
@@ -891,7 +905,7 @@ def handle_callback(call):
         invite_text = (
             "💥 *ልዩ የቼላ ቢንጎ ቅናሽ!* 💥🤝🤑\n"
             "እንኳን ደህና መጡ ወደ አዲሱ እና ትልቁ የጋባዥነት ፕሮግራማችን! 👑✨\n"
-            "💸 *5 ጓደኞችን ይጋብዙ፣ ወዲያውኑ 50 ETB ይውሰዘዱ!* 💸💎\n\n"
+            "💸 *5 ጓደኞችን ይጋብዙ፣ ወዲያውኑ 50 ETB ይውሰዱ!* 💸💎\n\n"
             "ይህ ለተወሰነ ጊዜ ብቻ የሚቆይ ነው፣ አሁኑኑ ተጠቀሙበት።\n"
             "5 ሰዎች ሲመዘገቡ ወዲያውኑ 50 ETB የቼላ ቢንጎ አካውንት ላይ ይጨመራል።\n\n"
             "በተጨማሪም የጨላ ቢንጎ አባላት የሚከተሉትን ጥቅሞች ያገኛሉ፡\n"
@@ -1071,7 +1085,7 @@ def handle_text(message):
                 new_balance = real_bal + verified_amount
                 if _supabase is not None:
                     _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
-                    _supabase.table("transactions").insert({"user_id": str(message.from_user.id), "amount": verified_amount, "tx_type": "deposit", "status": "completed"}).execute()
+                    _supabase.table("transactions").insert({"id": str(uuid.uuid4()), "user_id": str(message.from_user.id), "amount": verified_amount, "tx_type": "deposit", "status": "completed"}).execute()
                 bot.delete_message(chat_id, wait_msg.message_id)
                 bot.send_message(chat_id, STRINGS[lang]["api_success"].format(verified_amount), reply_markup=remove_keyboard())
                 try: bot.send_message(ADMIN_IDS[0], f"🟢 *AUTOMATED DEPOSIT SUCCESS*\nUser ID: `{message.from_user.id}`\nRef: `{clean_txn_id}`\nCredited: `{verified_amount} ETB`")
