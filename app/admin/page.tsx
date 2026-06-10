@@ -110,7 +110,7 @@ export default function AdminDashboard() {
 
       if (pendingErr) console.error("Error fetching pending txs:", pendingErr);
 
-      // 2. Fetch Completed Ledger Items (Strict Filter: No Negatives!)
+      // 2. Fetch Completed Ledger Items (Deposits, Refunds, Admin Credits)
       const { data: completedDepositsData } = await supabase
           .from('transactions')
           .select('*')
@@ -164,7 +164,6 @@ export default function AdminDashboard() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const enrichedDeposits = ((completedDepositsData as DBTransaction[]) || [])
           .filter((tx) => {
-              // Only hide small amounts if they are standard deposits. Keep small refunds/credits just in case.
               if (tx.tx_type === 'deposit' && tx.amount < 50) return false;
               return true;
           })
@@ -481,11 +480,11 @@ export default function AdminDashboard() {
             </div>
           </section>
 
-          {/* 📥 INFLOW LEDGER: Deposits, Admin Credits, and Refunds */}
+          {/* 📥 SUCCESSFUL DEPOSITS */}
           <section className="bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg flex flex-col h-[700px]">
             <div className="bg-neutral-900 border-b border-neutral-800 px-6 py-4 flex justify-between items-center shrink-0">
               <h2 className="text-lg font-black tracking-widest text-white flex items-center gap-2">
-                <span className="text-emerald-500">📥</span> CASH INFLOW LEDGER
+                <span className="text-emerald-500">📥</span> SUCCESSFUL DEPOSITS
               </h2>
               <span className="bg-emerald-500/10 text-emerald-500 text-[10px] font-bold px-3 py-1.5 rounded border border-emerald-500/20 uppercase shadow-[0_0_10px_rgba(16,185,129,0.2)]">
                 Last 100
@@ -501,7 +500,7 @@ export default function AdminDashboard() {
               ) : (
                 recentDeposits.map((tx) => {
                   
-                  // Dynamic Color Formatting Rules based on Transaction Type
+                  // Dynamic Color Formatting Rules
                   const isRefund = tx.tx_type === 'refund';
                   const isAdminCredit = tx.tx_type === 'admin_credit';
                   
@@ -509,12 +508,16 @@ export default function AdminDashboard() {
                   let sidebarColor = "bg-emerald-500/30 group-hover:bg-emerald-500";
                   let badgeBg = "bg-emerald-500/10 text-emerald-500 border-emerald-500/20";
                   let badgeText = "API AUTOMATED";
+                  let containerBg = "bg-neutral-950 border-neutral-800/80";
+                  let providerText = tx.bank_name || "TELEBIRR"; // Fallback for old data
 
                   if (isRefund) {
                       textColor = "text-purple-400";
-                      sidebarColor = "bg-purple-500/30 group-hover:bg-purple-500";
-                      badgeBg = "bg-purple-500/10 text-purple-400 border-purple-500/20";
-                      badgeText = "SYSTEM REFUND";
+                      sidebarColor = "bg-purple-500";
+                      badgeBg = "bg-purple-500 text-white border-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.4)]";
+                      badgeText = "💳 SYSTEM REFUND";
+                      containerBg = "bg-purple-950/20 border-purple-500/30";
+                      providerText = "INTERNAL WALLET";
                   } else if (isAdminCredit) {
                       textColor = "text-blue-400";
                       sidebarColor = "bg-blue-500/30 group-hover:bg-blue-500";
@@ -525,7 +528,7 @@ export default function AdminDashboard() {
                   const displayAmount = Math.abs(tx.amount).toLocaleString();
 
                   return (
-                    <div key={tx.id} className="bg-neutral-950 border border-neutral-800/80 p-4 rounded-xl flex flex-col gap-3 transition-colors relative overflow-hidden group">
+                    <div key={tx.id} className={`${containerBg} border p-4 rounded-xl flex flex-col gap-3 transition-colors relative overflow-hidden group`}>
                       <div className={`absolute left-0 top-0 w-1 h-full ${sidebarColor} transition-colors`}></div>
                       
                       <div className="flex items-center justify-between border-b border-neutral-800/50 pb-2">
@@ -534,6 +537,9 @@ export default function AdminDashboard() {
                           <div className="text-[10px] text-neutral-400 tracking-widest uppercase font-bold">{timeAgo(tx.created_at)}</div>
                           <div className={`text-[9px] px-1.5 py-0.5 rounded mt-1 font-black tracking-widest border ${badgeBg}`}>
                             {badgeText}
+                          </div>
+                          <div className="text-[9px] text-neutral-500 font-bold uppercase tracking-widest mt-1">
+                            VIA: {providerText}
                           </div>
                         </div>
                       </div>

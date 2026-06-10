@@ -197,6 +197,7 @@ def set_lang(chat_id: int, lang: str) -> None:
     user_lang[chat_id] = lang
 
 def can_execute_command(message, allow_group_admin=False) -> bool:
+    """Safely routes commands. Deletes public spam from regular users entirely."""
     if message.chat.type != "private":
         if allow_group_admin and is_admin(message):
             return True
@@ -708,13 +709,14 @@ def cmd_credit(message):
         
         _supabase.table("tg_users").update({"balance": new_bal}).eq("tg_id", target_tg_id).execute()
         
-        # INSERT AS ADMIN_CREDIT INSTEAD OF DEPOSIT FOR DASHBOARD COLOR CODING
+        # ADDED BANK_NAME TRACKING TO ADMIN CREDIT
         _supabase.table("transactions").insert({
             "id": str(uuid.uuid4()),
-            "user_id": int(target_tg_id),  # STRICTLY PASSED AS INT FOR BIGINT COMPATIBILITY
+            "user_id": int(target_tg_id),
             "amount": amount,
             "tx_type": "admin_credit",
-            "status": "completed"
+            "status": "completed",
+            "bank_name": "Admin Vault"
         }).execute()
 
         bot.send_message(chat_id, f"✅ *Credited {amount:.2f} ETB* to target client account: `{target_tg_id}`.\n\n💰 *New Real Balance Wallet Balance State:* `{new_bal:.2f} ETB`")
@@ -1046,6 +1048,7 @@ def handle_text(message):
         clean_txn_id = extracted_id
         dep_info = user_deposit_data.get(chat_id, {"provider": "telebirr", "amount": 0.0})
         expected_amount = float(dep_info.get("amount", 0.0))
+        provider = str(dep_info.get("provider", "Telebirr")).capitalize()
         
         if not _reserve_transaction(clean_txn_id, message.from_user.id, expected_amount):
             bot.send_message(chat_id, STRINGS[lang]["api_used"], reply_markup=remove_keyboard())
@@ -1116,19 +1119,22 @@ def handle_text(message):
                 
                 if _supabase is not None:
                     _supabase.table("tg_users").update({"balance": new_balance}).eq("tg_id", message.from_user.id).execute()
+                    
+                    # ADDED BANK_NAME TRACKING TO AUTOMATED DEPOSIT
                     _supabase.table("transactions").insert({
                         "id": str(uuid.uuid4()),
                         "user_id": int(message.from_user.id),
                         "amount": verified_amount,
                         "tx_type": "deposit",
-                        "status": "completed"
+                        "status": "completed",
+                        "bank_name": provider
                     }).execute()
 
                 bot.delete_message(chat_id, wait_msg.message_id)
                 bot.send_message(chat_id, STRINGS[lang]["api_success"].format(verified_amount), reply_markup=remove_keyboard())
                 
                 try:
-                    bot.send_message(ADMIN_IDS[0], f"🟢 *AUTOMATED DEPOSIT SUCCESS*\nUser ID: `{message.from_user.id}`\nRef: `{clean_txn_id}`\nCredited: `{verified_amount} ETB`")
+                    bot.send_message(ADMIN_IDS[0], f"🟢 *AUTOMATED DEPOSIT SUCCESS*\nUser ID: `{message.from_user.id}`\nRef: `{clean_txn_id}`\nCredited: `{verified_amount} ETB`\nVia: `{provider}`")
                 except Exception:
                     pass
             else:
