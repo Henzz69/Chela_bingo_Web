@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useBingoStore } from '@/store/bingoStore';
 
@@ -15,12 +16,26 @@ const SummaryBar = ({ label, value, colorClass }: { label: string; value: string
 );
 
 export default function BingoCardSelection({ tgId }: Props) {
-  // 🚀 FIX: Destructured 'rooms' directly from the store
   const { 
     currentRoom, selectedCardId, allCardGrids, takenCardIds, 
     selectCardPreview, finalizeJoinWithCard, loadingRooms, 
-    error, clearError, theme, rooms 
+    error, clearError, theme, rooms, joinStakeRoom 
   } = useBingoStore();
+
+  // 🚀 THE LIFECYCLE AUTO-REROUTE GUARD
+  // Placed safely above the conditional return to ensure strict compliance with React Hook rules.
+  useEffect(() => {
+    if (currentRoom && (currentRoom.status === 'active' || currentRoom.status === 'finished')) {
+      // If the room becomes active or finishes its countdown before the user submits,
+      // seamlessly bounce them into the next open lobby matching this exact entry tier.
+      console.log(`📡 Room ${currentRoom.id} locked or active! Re-routing user to a fresh room...`);
+      
+      joinStakeRoom(tgId, currentRoom.entry_fee, currentRoom.max_players || 100)
+        .catch((err) => {
+          console.error("Auto-reroute sequencing exception:", err);
+        });
+    }
+  }, [currentRoom?.status, tgId, joinStakeRoom, currentRoom?.entry_fee, currentRoom?.max_players]);
 
   if (!currentRoom) return null;
   const currentPreviewGrid = selectedCardId ? allCardGrids[selectedCardId] : null;
@@ -37,7 +52,6 @@ export default function BingoCardSelection({ tgId }: Props) {
         </div>
         
         <div className="flex gap-2 w-full max-w-sm mx-auto">
-          {/* 🚀 FIX: Real-time platform Live Games counter utilizing local store memory */}
           <SummaryBar label="LIVE GAMES" value={`${rooms.length}`} colorClass="text-orange-500 dark:text-orange-400" />
           <SummaryBar label="STAKE" value={`${currentRoom.entry_fee} ETB`} colorClass="text-yellow-600 dark:text-yellow-400" />
         </div>
@@ -116,6 +130,7 @@ export default function BingoCardSelection({ tgId }: Props) {
 
         <div className="shrink-0 pb-safe pb-2">
           <motion.button
+            key="submit-btn"
             whileTap={{ scale: 0.97 }}
             onClick={() => finalizeJoinWithCard(tgId)}
             disabled={selectedCardId === null || loadingRooms}
