@@ -23,22 +23,20 @@ export default function BingoCardSelection({ tgId }: Props) {
   } = useBingoStore();
 
   // 🚀 THE LIFECYCLE AUTO-REROUTE GUARD
-  // Placed safely above the conditional return to ensure strict compliance with React Hook rules.
   useEffect(() => {
     if (currentRoom && (currentRoom.status === 'active' || currentRoom.status === 'finished')) {
-      // If the room becomes active or finishes its countdown before the user submits,
-      // seamlessly bounce them into the next open lobby matching this exact entry tier.
       console.log(`📡 Room ${currentRoom.id} locked or active! Re-routing user to a fresh room...`);
-      
       joinStakeRoom(tgId, currentRoom.entry_fee, currentRoom.max_players || 100)
-        .catch((err) => {
-          console.error("Auto-reroute sequencing exception:", err);
-        });
+        .catch((err) => console.error("Auto-reroute sequencing exception:", err));
     }
   }, [currentRoom?.status, tgId, joinStakeRoom, currentRoom?.entry_fee, currentRoom?.max_players]);
 
   if (!currentRoom) return null;
   const currentPreviewGrid = selectedCardId ? allCardGrids[selectedCardId] : null;
+
+  // 🚀 THE TRUE LIVE GAMES FILTER
+  // Only counts games where doors are locked ('countdown') or balls are drawing ('active')
+  const liveGamesCount = rooms.filter(r => r.status === 'active' || r.status === 'countdown').length;
 
   return (
     <div className={`w-full h-[100dvh] overflow-hidden bg-[#F0FDF4] dark:bg-[#042014] text-[#022C22] dark:text-white flex flex-col pt-safe transition-colors duration-500 ${theme === 'dark' ? 'dark' : ''}`}>
@@ -52,7 +50,8 @@ export default function BingoCardSelection({ tgId }: Props) {
         </div>
         
         <div className="flex gap-2 w-full max-w-sm mx-auto">
-          <SummaryBar label="LIVE GAMES" value={`${rooms.length}`} colorClass="text-orange-500 dark:text-orange-400" />
+          {/* 🚀 Render the filtered live games count here */}
+          <SummaryBar label="LIVE GAMES" value={`${liveGamesCount}`} colorClass="text-orange-500 dark:text-orange-400" />
           <SummaryBar label="STAKE" value={`${currentRoom.entry_fee} ETB`} colorClass="text-yellow-600 dark:text-yellow-400" />
         </div>
       </nav>
