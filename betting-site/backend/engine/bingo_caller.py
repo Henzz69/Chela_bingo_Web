@@ -1,10 +1,11 @@
 """
-Bingo Caller — Multiplayer Batching Engine (Bulletproof Edition)
+Bingo Caller — Multiplayer Batching Engine (Elastic Edition V2)
 ==============================================================
 - MIN_PLAYERS: 2
-- COUNTDOWN_SECONDS: 50
-- DOOR_LOCK_SECONDS: 5
-- Failsafe execution loops to prevent hanging
+- BASE_COUNTDOWN: 50 seconds
+- ELASTIC EXTENSION: +2.5 seconds per player
+- HARD CAP: 100 seconds maximum waiting time
+- INSTANT LOCK: Automatically starts if lobby hits 100 players
 """
 
 import os
@@ -30,7 +31,10 @@ sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ── Config ────────────────────────────────────────────────────
 MIN_PLAYERS           = 2   
-COUNTDOWN_SECONDS     = 50  # 🚀 UPDATED: Extended lobby boarding window for max 100 players
+BASE_COUNTDOWN        = 50.0  # 🚀 Starting timer
+MAX_HARD_CAP          = 100.0 # 🚀 Absolute maximum wait time
+ELASTIC_BONUS         = 2.5   # 🚀 Seconds added per player
+
 DOOR_LOCK_SECONDS     = 5   
 DRAW_INTERVAL         = 3   
 TICK_INTERVAL         = 1   
@@ -39,6 +43,7 @@ MAX_CONCURRENT_GAMES  = 3
 # Engine-level memory
 _last_draw_time: dict[str, float] = {}
 _boarding_start_times: dict[str, float] = {}
+_expected_start_times: dict[str, float] = {} # 🚀 Tracks the exact UNIX timestamp the game will start
 
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -78,7 +83,7 @@ def cleanup_zombie_rooms():
         log(f"⚠️ Zombie cleanup failed: {e}")
 
 # ══════════════════════════════════════════════════════════════
-# PHASE 1: WAITING → COUNTDOWN
+# PHASE 1: WAITING → COUNTDOWN (THE ELASTIC TIMER)
 # ══════════════════════════════════════════════════════════════
 def process_waiting_rooms():
     try:
@@ -91,6 +96,7 @@ def process_waiting_rooms():
     for room in rooms:
         room_id = room["id"]
         entry_fee = room.get("entry_fee", 10)
+        max_capacity = room.get("max_players", 100)
         
         running_count = get_running_games_count(entry_fee)
         player_count = get_player_count(room_id)
@@ -100,45 +106,78 @@ def process_waiting_rooms():
             if room_id in _boarding_start_times:
                 log(f"📉 Room {room_id[:8]} fell below minimum players. Clock paused.")
                 _boarding_start_times.pop(room_id, None)
+                _expected_start_times.pop(room_id, None)
+                try: sb.table("bingo_rooms").update({"expected_start_time": None}).eq("id", room_id).execute()
+                except: pass
             continue
 
         # 2. Server is Full
         if running_count >= MAX_CONCURRENT_GAMES:
-            if int(time.time()) % 10 == 0:  # Avoid spamming logs
+            if int(time.time()) % 10 == 0:  
                 log(f"🛑 QUEUED: Room {room_id[:8]} has {player_count} players but server is full.")
             continue
 
         # 3. Valid Matchmaking State!
         if room_id not in _boarding_start_times:
             _boarding_start_times[room_id] = time.time()
-            log(f"⏰ Room {room_id[:8]} hit minimum players! {COUNTDOWN_SECONDS}-Second boarding phase started.")
+            
+            # Initial Dynamic Setup
+            initial_duration = min(MAX_HARD_CAP, BASE_COUNTDOWN + (player_count * ELASTIC_BONUS))
+            target_unix = _boarding_start_times[room_id] + initial_duration
+            _expected_start_times[room_id] = target_unix
+            
+            iso_target = datetime.fromtimestamp(target_unix, tz=timezone.utc).isoformat()
+            try: sb.table("bingo_rooms").update({"expected_start_time": iso_target}).eq("id", room_id).execute()
+            except: pass
+            
+            log(f"⏰ Room {room_id[:8]} hit minimum players! Elastic Boarding started (Base: {initial_duration}s).")
 
-        elapsed = time.time() - _boarding_start_times[room_id]
+        # 🚀 THE ELASTIC CALCULATOR
+        current_duration = min(MAX_HARD_CAP, BASE_COUNTDOWN + (player_count * ELASTIC_BONUS))
+        current_target_unix = _boarding_start_times[room_id] + current_duration
         
-        if elapsed >= COUNTDOWN_SECONDS:
+        # 🚀 ANTI-SPAM SYNC: Only update database if the timer expanded by at least 2.5 seconds
+        last_saved_target = _expected_start_times.get(room_id, 0)
+        if current_target_unix - last_saved_target >= ELASTIC_BONUS:
+            _expected_start_times[room_id] = current_target_unix
+            iso_target = datetime.fromtimestamp(current_target_unix, tz=timezone.utc).isoformat()
+            try:
+                sb.table("bingo_rooms").update({"expected_start_time": iso_target}).eq("id", room_id).execute()
+                log(f"⏱️ FRENZY: Room {room_id[:8]} timer extended! New target locked.")
+            except Exception as e:
+                pass
+
+        # Check conditions
+        time_is_up = time.time() >= _expected_start_times.get(room_id, time.time() + 999)
+        room_is_full = player_count >= max_capacity
+
+        if time_is_up or room_is_full:
             try:
                 sb.table("bingo_rooms").update({
                     "status": "countdown",
                     "countdown_started_at": now_utc().isoformat(),
                 }).eq("id", room_id).execute()
                 
-                log(f"🟡 Room {room_id[:8]} → DOORS LOCKED ({player_count} players).")
+                reason = "SOLD OUT" if room_is_full else "TIME UP"
+                log(f"🟡 Room {room_id[:8]} → DOORS LOCKED [{reason}] ({player_count} players).")
+                
                 _boarding_start_times.pop(room_id, None)
+                _expected_start_times.pop(room_id, None)
 
                 # Spawn subsequent blank lobby container
                 new_room = {
                     "status": "waiting",
                     "entry_fee": entry_fee,
-                    "max_players": room.get("max_players", 100),
+                    "max_players": max_capacity,
                 }
                 sb.table("bingo_rooms").insert(new_room).execute()
 
             except Exception as e:
                 log(f"❌ [ERROR] Locking doors for {room_id[:8]}: {e}")
         else:
-            remaining = int(COUNTDOWN_SECONDS - elapsed)
-            if remaining % 5 == 0 and remaining > 0: 
-                print(f"[ENGINE {now_utc().strftime('%H:%M:%S')}] ⏳ Room {room_id[:8]} boarding phase ends in {remaining}s... ({player_count}/100 players joined)")
+            remaining = int(_expected_start_times[room_id] - time.time())
+            if remaining % 10 == 0 and remaining > 0: 
+                print(f"[ENGINE {now_utc().strftime('%H:%M:%S')}] ⏳ Room {room_id[:8]} boarding phase ends in ~{remaining}s... ({player_count}/100 players)")
 
 # ══════════════════════════════════════════════════════════════
 # PHASE 2: COUNTDOWN → ACTIVE
@@ -236,7 +275,7 @@ def ensure_initial_rooms():
 
 def main():
     log("=" * 50)
-    log("🎰 CHELA Bingo Engine Online (Bulletproof Edition)")
+    log("🎰 CHELA Bingo Engine Online (Elastic Edition V2)")
     log("=" * 50)
     
     cleanup_zombie_rooms()
