@@ -35,8 +35,17 @@ export default function BingoCardSelection({ tgId }: Props) {
   const currentPreviewGrid = selectedCardId ? allCardGrids[selectedCardId] : null;
 
   // 🚀 THE TRUE LIVE GAMES FILTER
-  // Only counts games where doors are locked ('countdown') or balls are drawing ('active')
   const liveGamesCount = rooms.filter(r => r.status === 'active' || r.status === 'countdown').length;
+
+  // 🚀 THE JACKPOT CALCULATOR
+  const houseEdge = 0.20;
+  const activePlayers = takenCardIds ? takenCardIds.size : 0;
+  const entryFee = currentRoom.entry_fee || 0;
+  const maxPlayers = currentRoom.max_players || 100;
+  
+  const currentPot = activePlayers * entryFee * (1 - houseEdge);
+  const maxPot = maxPlayers * entryFee * (1 - houseEdge);
+  const fillPercentage = maxPot > 0 ? Math.min((currentPot / maxPot) * 100, 100) : 0;
 
   return (
     <div className={`w-full h-[100dvh] overflow-hidden bg-[#F0FDF4] dark:bg-[#042014] text-[#022C22] dark:text-white flex flex-col pt-safe transition-colors duration-500 ${theme === 'dark' ? 'dark' : ''}`}>
@@ -50,9 +59,8 @@ export default function BingoCardSelection({ tgId }: Props) {
         </div>
         
         <div className="flex gap-2 w-full max-w-sm mx-auto">
-          {/* 🚀 Render the filtered live games count here */}
           <SummaryBar label="LIVE GAMES" value={`${liveGamesCount}`} colorClass="text-orange-500 dark:text-orange-400" />
-          <SummaryBar label="STAKE" value={`${currentRoom.entry_fee} ETB`} colorClass="text-yellow-600 dark:text-yellow-400" />
+          <SummaryBar label="STAKE" value={`${entryFee} ETB`} colorClass="text-yellow-600 dark:text-yellow-400" />
         </div>
       </nav>
 
@@ -65,6 +73,33 @@ export default function BingoCardSelection({ tgId }: Props) {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* 🚀 THE LIVE POT SLIDER */}
+        <div className="shrink-0 bg-white dark:bg-[#062416] border border-[#22C55E]/30 dark:border-[#22C55E]/20 rounded-xl p-3 shadow-sm relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-full bg-yellow-500/5 blur-2xl rounded-full" />
+          <div className="flex justify-between items-end mb-2 relative z-10">
+            <div className="flex flex-col">
+              <span className="text-[9px] text-[#064E3B]/60 dark:text-white/50 font-black uppercase tracking-widest leading-tight">Est. Prize Pot</span>
+              <span className="text-xs font-bold text-[#064E3B]/40 dark:text-white/40">{activePlayers} / {maxPlayers} Players</span>
+            </div>
+            <motion.span 
+              key={currentPot}
+              initial={{ scale: 1.1, color: '#F59E0B' }}
+              animate={{ scale: 1, color: theme === 'dark' ? '#FBBF24' : '#D97706' }}
+              className="text-2xl font-black drop-shadow-sm tracking-tight"
+            >
+              {currentPot > 0 ? currentPot.toFixed(2) : '0'} ETB
+            </motion.span>
+          </div>
+          <div className="w-full h-2.5 bg-gray-100 dark:bg-black/40 rounded-full overflow-hidden shadow-inner relative z-10">
+            <motion.div
+              className="h-full bg-gradient-to-r from-green-500 to-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.5)]"
+              initial={{ width: 0 }}
+              animate={{ width: `${fillPercentage}%` }}
+              transition={{ type: 'spring', stiffness: 60, damping: 15 }}
+            />
+          </div>
+        </div>
 
         <div className="shrink-0 bg-white dark:bg-[#0a4a2e] border border-[#22C55E]/20 dark:border-white/10 rounded-xl p-2 shadow-sm dark:shadow-none transition-colors">
           <div className="grid grid-cols-10 gap-[3px] aspect-square w-full">
