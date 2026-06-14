@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useBingoStore } from '@/store/bingoStore';
+import { useBingoStore, BingoRoom } from '@/store/bingoStore';
 import { columnLetter } from '@/lib/bingoCards';
 import { useTelegram } from '@/lib/useTelegram'; 
 
@@ -15,19 +15,49 @@ const MASTER_BOARD_ROWS = Array.from({ length: 15 }, (_, rowIndex) => [
 
 interface Props { tgId: number; }
 
-function IsolatedCountdown({ isReadyToStart, gameStatus }: { isReadyToStart: boolean, gameStatus: string }) {
+// 🚀 ELASTIC TIMER COMPONENT WITH FRENZY ANIMATION
+function IsolatedCountdown({ isReadyToStart, currentRoom }: { isReadyToStart: boolean, currentRoom: BingoRoom }) {
   const [countdownStart, setCountdownStart] = useState<number>(50);
+  const [showFrenzyPing, setShowFrenzyPing] = useState(false);
+  const lastExpectedTimeRef = useRef<string | null>(null);
 
+  // 1. Calculate and tick the clock using the absolute server time
   useEffect(() => {
-    if (gameStatus === 'waiting' && isReadyToStart) {
-      const interval = setInterval(() => { setCountdownStart((prev) => (prev > 0 ? prev - 1 : 0)); }, 1000);
+    if (currentRoom.status === 'waiting' && isReadyToStart) {
+      const interval = setInterval(() => {
+        if (currentRoom.expected_start_time) {
+          const targetMs = new Date(currentRoom.expected_start_time).getTime();
+          const remainingMs = targetMs - Date.now();
+          const remainingSecs = Math.max(0, Math.floor(remainingMs / 1000));
+          setCountdownStart(remainingSecs);
+        } else {
+          setCountdownStart((prev) => (prev > 0 ? prev - 1 : 0));
+        }
+      }, 1000);
       return () => clearInterval(interval);
-    } else if (gameStatus !== 'waiting') {
+    } else if (currentRoom.status !== 'waiting') {
       setCountdownStart(50);
     }
-  }, [gameStatus, isReadyToStart]);
+  }, [currentRoom.status, isReadyToStart, currentRoom.expected_start_time]);
 
-  if (gameStatus === 'waiting' && !isReadyToStart) {
+  // 2. Trigger the "+2.5s" animation when the server target expands
+  useEffect(() => {
+    if (currentRoom.expected_start_time) {
+      if (lastExpectedTimeRef.current && lastExpectedTimeRef.current !== currentRoom.expected_start_time) {
+        // Only ping if the new target time is fundamentally LATER than the old one
+        const oldTarget = new Date(lastExpectedTimeRef.current).getTime();
+        const newTarget = new Date(currentRoom.expected_start_time).getTime();
+        
+        if (newTarget > oldTarget + 1000) {
+          setShowFrenzyPing(true);
+          setTimeout(() => setShowFrenzyPing(false), 1500);
+        }
+      }
+      lastExpectedTimeRef.current = currentRoom.expected_start_time;
+    }
+  }, [currentRoom.expected_start_time]);
+
+  if (currentRoom.status === 'waiting' && !isReadyToStart) {
     return (
       <motion.div key="wait1" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-yellow-600 dark:text-yellow-400">
         <div className="text-xl mb-1 animate-pulse">⏳</div>
@@ -35,11 +65,29 @@ function IsolatedCountdown({ isReadyToStart, gameStatus }: { isReadyToStart: boo
       </motion.div>
     );
   }
-  if (gameStatus === 'waiting' && isReadyToStart) {
+
+  if (currentRoom.status === 'waiting' && isReadyToStart) {
     return (
-      <motion.div key="wait2" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="text-green-600 dark:text-green-400">
+      <motion.div key="wait2" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="text-green-600 dark:text-green-400 relative flex flex-col items-center">
         <div className="text-[10px] uppercase font-bold text-green-600/70 dark:text-green-500/70 mb-0.5">Count Down</div>
-        <div className="text-2xl font-black">{countdownStart}s</div>
+        <div className="flex items-end justify-center relative w-full">
+          <div className="text-2xl font-black">{countdownStart}s</div>
+          
+          {/* 🚀 THE FRENZY ANIMATION (+2.5s) */}
+          <AnimatePresence>
+            {showFrenzyPing && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10, scale: 0.5 }} 
+                animate={{ opacity: 1, y: -20, scale: 1.2 }} 
+                exit={{ opacity: 0, y: -40, scale: 1 }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+                className="absolute right-0 top-0 text-orange-500 font-black text-sm drop-shadow-md z-10"
+              >
+                +2.5s
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </motion.div>
     );
   }
@@ -47,7 +95,6 @@ function IsolatedCountdown({ isReadyToStart, gameStatus }: { isReadyToStart: boo
 }
 
 export default function BingoGameBoard({ tgId }: Props) {
-  // 🚀 INJECTED: Pulled joinStakeRoom into the destructuring
   const { 
     currentRoom, mySession, drawnNumbers, daubed, winResult, gameStatus, 
     winnerId, payout, error, takenCardIds, daubCell, claimBingo, leaveGame, 
@@ -60,10 +107,7 @@ export default function BingoGameBoard({ tgId }: Props) {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showFalseAlarm, setShowFalseAlarm] = useState(false);
   const [showLeaveWarning, setShowLeaveWarning] = useState(false);
-  
-  // 🚀 INJECTED: Loading state for the instant-rejoin button
   const [isRejoining, setIsRejoining] = useState(false);
-  
   const [playerCount, setPlayerCount] = useState<number>(1);
 
   useEffect(() => {
@@ -109,7 +153,6 @@ export default function BingoGameBoard({ tgId }: Props) {
     catch (err) { setIsClaiming(false); }
   };
 
-  // 🚀 THE INSTANT REJOIN MECHANIC
   const handlePlayAgain = async () => {
     if (!currentRoom || !tgId) return;
     const fee = currentRoom.entry_fee;
@@ -117,7 +160,6 @@ export default function BingoGameBoard({ tgId }: Props) {
 
     setIsRejoining(true);
 
-    // 1. Wipe stale game data instantly to prevent flashes or carrying over daubs
     useBingoStore.setState({
       drawnNumbers: [],
       daubed: new Set([12]),
@@ -127,7 +169,6 @@ export default function BingoGameBoard({ tgId }: Props) {
       gameStatus: 'idle'
     });
 
-    // 2. Queue directly into the next available active lobby for this tier
     try {
       await joinStakeRoom(tgId, fee, maxP);
       try { if (isTelegram && haptic && typeof haptic.impact === 'function') haptic.impact('medium'); } catch(e){}
@@ -255,7 +296,9 @@ export default function BingoGameBoard({ tgId }: Props) {
           <div className="flex gap-2 h-24 shrink-0">
             <div className="flex-1 bg-white dark:bg-[#0a4a2e] border border-[#22C55E]/30 dark:border-white/10 shadow-sm dark:shadow-none rounded-xl flex flex-col justify-center items-center text-center p-2 transition-colors">
               <AnimatePresence mode="wait">
-                {gameStatus === 'waiting' && <IsolatedCountdown isReadyToStart={isReadyToStart} gameStatus={gameStatus} />}
+                {/* 🚀 ELASTIC TIMER INJECTED HERE */}
+                {gameStatus === 'waiting' && <IsolatedCountdown isReadyToStart={isReadyToStart} currentRoom={currentRoom} />}
+                
                 {gameStatus === 'countdown' && (
                   <motion.div key="count" initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ opacity: 0 }} className="text-orange-500 dark:text-orange-400">
                     <div className="text-xl mb-1 animate-bounce">🚀</div>
@@ -352,7 +395,6 @@ export default function BingoGameBoard({ tgId }: Props) {
         </div>
       </footer>
 
-      {/* 🚀 PHASE 4: THE UPGRADED FINISHED MODAL */}
       <AnimatePresence>
         {gameStatus === 'finished' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-white/90 dark:bg-black/95 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
@@ -403,7 +445,6 @@ export default function BingoGameBoard({ tgId }: Props) {
                 </>
               )}
               
-              {/* 🚀 THE INSTANT REJOIN UI ENGINE */}
               <div className="flex gap-2 w-full mt-2">
                 <button 
                   onClick={leaveGame} 

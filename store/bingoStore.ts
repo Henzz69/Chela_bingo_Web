@@ -16,7 +16,7 @@ export interface BingoRoom {
   winner_id?: string | null;
   active_game_count?: number; 
   generation_seed?: string; 
-  // 🚀 INJECTED: winner_name is now safely typed in the snapshot
+  expected_start_time?: string | null; // 🚀 INJECTED: Elastic Timer Sync
   winning_card_snapshot?: { grid: number[], daubed: number[], winner_name?: string };
 }
 
